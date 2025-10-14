@@ -88,6 +88,10 @@ class PanasonicBLEParcel:
 
             ptype = fd.read(1)[0]
             plen = fd.read(1)[0]
+
+            if ptype == 0x69 and plen == 0xFE:
+                return PanasonicBLEParcel.PanasonicBLEPacketUARTKeepAlive(ptype, plen)
+
             pdata = fd.read(plen)
 
             if ptype == 129:
@@ -159,6 +163,10 @@ class PanasonicBLEParcel:
                     ((pdata[x + 4] << 8) + (pdata[x + 5] & 255)) / 10
                     for x in range(0, len(pdata) - 4, 2)
                 ]
+
+    class PanasonicBLEPacketUARTKeepAlive(PanasonicBLEPacket):
+        """UART keepalive/empty packet (0x69 0xFE)."""
+        pass
 
     class COMPONENT(Enum):
         I_UNIT1 = 1
