@@ -91,7 +91,7 @@ async def _async_run_thermostat(hass: HomeAssistant, entry: ConfigEntry) -> None
                 "[%s] Error updating PanasonicHC device %s", thermostat.mac_address, e
             )
 
-        await asyncio.sleep(10)
+        await asyncio.sleep(60 if thermostat.status.power else 300)
 
 
 async def _async_reconnect_thermostat(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -103,7 +103,7 @@ async def _async_reconnect_thermostat(hass: HomeAssistant, entry: ConfigEntry) -
         try:
             await thermostat.async_connect()
         except PanasonicHCException:
-            await asyncio.sleep(10)
+            await asyncio.sleep(20)
             continue
 
         _LOGGER.debug("[%s] PanasonicHC device connected", thermostat.mac_address)
