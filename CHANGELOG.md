@@ -11,7 +11,12 @@ All notable changes are documented here. Versions follow Semantic Versioning.
 - A BlueZ backend assertion during disconnect cleanup could mask the original dropped
   connection and prevent Home Assistant from retrying setup. Cleanup is now best-effort
   for backend exceptions while cancellation continues to propagate.
-- Added a regression test reproducing the live controller's setup failure.
+- Ignore queued notifications from a previous connection after disconnect.
+- Clean up connections on unexpected setup exceptions without masking the exception.
+- Allow diagnostics before successful entry setup and include the cause of connection errors.
+- Remove the unused retry-connector callback argument and clarify that HA chooses the route;
+  refreshing a device lookup does not force a different proxy.
+- Add regression tests for cleanup, stale notifications and unavailable diagnostics.
 
 ## [0.1.0] - 2026-10-08
 

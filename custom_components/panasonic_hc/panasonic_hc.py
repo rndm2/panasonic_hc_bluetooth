@@ -113,29 +113,31 @@ class PanasonicHC:
 
     async def async_connect(self) -> None:
         """Refresh the adapter reference, connect and require a valid status."""
-        if self._device_callback is not None:
-            device = self._device_callback()
-            if device is None:
-                raise PanasonicHCException("No connectable Bluetooth route")
-            self.device = device
         try:
+            self.device = self._resolve_device()
             async with asyncio.timeout(45):
                 self._conn = await establish_connection(
                     BleakClientWithServiceCache,
                     self.device,
                     self.device.name or self.device.address,
                     disconnected_callback=self._disconnected,
-                    ble_device_callback=self._resolve_device,
                 )
                 await asyncio.sleep(NOTIFY_SETTLE_DELAY)
-                await self._conn.start_notify(BLE_CHAR_NOTIFY, self.on_notification)
+                connection = self._conn
+
+                def notification(handle: BleakGATTCharacteristic, data: bytearray) -> None:
+                    # A backend may deliver queued notifications after disconnect.
+                    if self._conn is connection:
+                        self.on_notification(handle, data)
+
+                await connection.start_notify(BLE_CHAR_NOTIFY, notification)
                 await asyncio.sleep(NOTIFY_SETTLE_DELAY)
                 async with self._lock:
                     await self._request_status()
         except (BleakError, TimeoutError, PanasonicHCException) as err:
             await self.async_disconnect()
-            raise PanasonicHCException("Could not initialize controller") from err
-        except asyncio.CancelledError:
+            raise PanasonicHCException(f"Could not initialize controller: {err}") from err
+        except BaseException:
             await self.async_disconnect()
             raise
         self.disconnected_event.clear()

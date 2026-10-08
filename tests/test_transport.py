@@ -108,7 +108,7 @@ def test_disconnect_immediately_unavailable(thermostat, connected):
     listener.assert_called_once()
 
 
-def test_retry_resolves_new_proxy_route(thermostat, device):
+def test_resolve_device_refreshes_ha_lookup(thermostat, device):
     from bleak.backends.device import BLEDevice
 
     new_route = BLEDevice(device.address, device.name, {"source": "new-proxy"})
@@ -156,4 +156,30 @@ async def test_cleanup_assertion_preserves_cancellation(thermostat, connected):
     ):
         with pytest.raises(asyncio.CancelledError):
             await thermostat.async_connect()
+    assert thermostat._conn is None
+
+
+async def test_queued_notification_from_old_connection_is_ignored(thermostat, connected):
+    with patch(
+        "custom_components.panasonic_hc.panasonic_hc.establish_connection",
+        AsyncMock(return_value=connected),
+    ):
+        await thermostat.async_connect()
+    callback = connected.start_notify.call_args.args[1]
+    await thermostat.async_disconnect()
+    old_status = thermostat.status
+    callback(Mock(), bytearray(status_packet(temp=27)))
+    assert thermostat.status is old_status
+    assert not thermostat.ready
+
+
+async def test_unexpected_setup_error_still_disconnects(thermostat, connected):
+    connected.start_notify.side_effect = RuntimeError("backend failure")
+    with patch(
+        "custom_components.panasonic_hc.panasonic_hc.establish_connection",
+        AsyncMock(return_value=connected),
+    ):
+        with pytest.raises(RuntimeError, match="backend failure"):
+            await thermostat.async_connect()
+    connected.disconnect.assert_awaited_once()
     assert thermostat._conn is None

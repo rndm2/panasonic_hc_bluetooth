@@ -34,3 +34,14 @@ response handling does not assume that the controller can subscribe immediately 
 - Energy scope was explicitly removed; no energy requests or sensor remain.
 - Record safe packet fixtures before extending support beyond the known controller model.
 - Clarify the upstream license; no new license is asserted for inherited code.
+
+## Critical review after 0.1.0
+
+- **Fixed:** backend disconnect assertions masked the original connection error and broke setup retry.
+- **Fixed:** queued notifications from a closed connection could replace current state.
+- **Fixed:** unexpected setup failures leaked the connection; cleanup now runs before re-raising.
+- **Fixed:** diagnostics assumed successful setup and could raise before runtime data existed.
+- **Corrected:** `ble_device_callback` is unused by retry-connector 4.7.1. Lookup is refreshed at
+  each integration attempt; HA still selects the backend. Tests do not prove proxy failover.
+- **Release process:** 0.1.0 was published before live validation succeeded. Hardware results
+  must be reported separately from CI. The published tag is not rewritten.
