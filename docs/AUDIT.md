@@ -37,6 +37,8 @@ response handling does not assume that the controller can subscribe immediately 
 
 ## Critical review after 0.1.0
 
+- **Fixed on hardware:** the first status after a command can be stale; confirmation now waits
+  for the requested value with a deadline, without resending the command.
 - **Fixed:** backend disconnect assertions masked the original connection error and broke setup retry.
 - **Fixed:** queued notifications from a closed connection could replace current state.
 - **Fixed:** unexpected setup failures leaked the connection; cleanup now runs before re-raising.

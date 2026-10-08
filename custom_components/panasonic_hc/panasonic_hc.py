@@ -30,6 +30,8 @@ MAX_TEMP = 32
 BLE_CHAR_WRITE = "4d200002-eff3-4362-b090-a04cab3f1da0"
 BLE_CHAR_NOTIFY = "4d200003-eff3-4362-b090-a04cab3f1da0"
 RESPONSE_TIMEOUT = 15
+COMMAND_CONFIRM_TIMEOUT = 15
+COMMAND_CONFIRM_INTERVAL = 0.5
 # Preserve the controller settling delays from the working upstream connection path.
 NOTIFY_SETTLE_DELAY = 0.5
 _LOGGER = logging.getLogger(__name__)
@@ -235,9 +237,17 @@ class PanasonicHC:
                 raise PanasonicHCException("Controller is not ready")
             for command in commands:
                 await self._write(command)
-            await self._request_status()
-            if self.status is None or not expected(self.status):
-                raise PanasonicHCException("Controller did not confirm requested setting")
+            # The first reply can still describe the state before the write.
+            # Do not resend the command: only poll until the setting is confirmed.
+            try:
+                async with asyncio.timeout(COMMAND_CONFIRM_TIMEOUT):
+                    while True:
+                        await self._request_status()
+                        if self.status is not None and expected(self.status):
+                            return
+                        await asyncio.sleep(COMMAND_CONFIRM_INTERVAL)
+            except TimeoutError as err:
+                raise PanasonicHCException("Controller did not confirm requested setting") from err
 
     async def async_set_power(self, state: bool) -> None:
         await self._set([PanasonicBLEPower(int(state))], lambda s: s.power == state)

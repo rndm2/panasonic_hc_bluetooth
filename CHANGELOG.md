@@ -8,6 +8,8 @@ All notable changes are documented here. Versions follow Semantic Versioning.
 
 ### Fixed
 
+- Wait up to 15 seconds for command confirmation when the first status reply still contains
+  the previous setting. Only status requests are repeated, never the HVAC command.
 - A BlueZ backend assertion during disconnect cleanup could mask the original dropped
   connection and prevent Home Assistant from retrying setup. Cleanup is now best-effort
   for backend exceptions while cancellation continues to propagate.

@@ -42,7 +42,9 @@ This release does not migrate stored configuration or rewrite entity identifiers
 Climate supports power, HVAC mode, target temperature (16–32 °C in 0.5 °C steps),
 fan speed and eco preset. These temperature limits are inherited and need model-specific
 hardware verification. Commands are serialized, followed by a status request, and raise
-an HA action error when the controller does not confirm the requested value. A failed
+an HA action error when the controller does not confirm the requested value within 15 seconds.
+Status is polled during confirmation because the first reply can still contain the old setting.
+The command itself is sent only once. A failed
 multi-command mode change may have partially affected the controller: check its current state.
 
 Climate is polled every 60 seconds while on and every 300 seconds while off. Valid BLE

@@ -183,3 +183,23 @@ async def test_unexpected_setup_error_still_disconnects(thermostat, connected):
             await thermostat.async_connect()
     connected.disconnect.assert_awaited_once()
     assert thermostat._conn is None
+
+
+async def test_delayed_command_confirmation_does_not_resend_command(thermostat, connected):
+    from custom_components.panasonic_hc.panasonic_hc_proto import _decode
+
+    requests = 0
+    writes = []
+
+    async def write(uuid, data):
+        nonlocal requests
+        ptype = _decode(data)[5]
+        writes.append(ptype)
+        if ptype == 129:
+            requests += 1
+            notify(thermostat, status_packet(temp=22 if requests == 1 else 25))
+
+    connected.write_gatt_char.side_effect = write
+    await thermostat.async_set_temperature(25)
+    assert thermostat.status.settemp == 25
+    assert writes == [76, 129, 129]
