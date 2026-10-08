@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 — 2026-10-09
+
+- Rewrite the controller core into typed protocol, state, transport, transaction and runtime layers.
+- Reject unrelated status parcels and invalid targets; apply multi-packet status atomically.
+- Clear optional state across sessions; ignore late packets after failures/cancellation.
+- Bound the entire command transaction and translate unexpected backend write failures.
+- Make repeated connect idempotent and clean up reconnect tracking after cancellation.
+- Add nearby-device selection with manual MAC fallback and expanded privacy-safe diagnostics.
+- Preserve domain, device/entity identity, command wire format and the removal of energy accounting.
+- Rewrite README; document HA adapter selection, pairing boundaries and review evidence.
+
+
 All notable changes are documented here. Versions follow Semantic Versioning.
 
 ## [Unreleased]

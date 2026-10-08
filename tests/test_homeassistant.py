@@ -315,3 +315,72 @@ async def test_poll_worker_recovers_after_unexpected_backend_error():
     assert thermostat.async_get_status.await_count == 2
     sleep.assert_awaited_once_with(5)
     assert thermostat.async_disconnect.await_count == 2
+
+
+async def test_nearby_picker_excludes_configured_and_accepts_manual_mac(hass, device):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entry = MockConfigEntry(domain="panasonic_hc", unique_id=device.address.lower(), data={})
+    entry.add_to_hass(hass)
+    flow = PanasonicHCConfigFlow()
+    flow.hass = hass
+    flow.handler = "panasonic_hc"
+    flow.context = {"source": "user"}
+    with patch(
+        "custom_components.panasonic_hc.config_flow.bluetooth.async_discovered_service_info",
+        return_value=[
+            SimpleNamespace(address=device.address, name="Already configured"),
+            SimpleNamespace(address="22:33:44:55:66:77", name="22:33:44:55:66:77"),
+            SimpleNamespace(address="11:22:33:44:55:66", name="Renamed controller"),
+        ],
+    ):
+        result = await flow.async_step_user()
+    schema = result["data_schema"]
+    field = next(iter(schema.schema.values()))
+    assert field.config["options"] == [
+        {"value": "11:22:33:44:55:66", "label": "Renamed controller (11:22:33:44:55:66)"}
+    ]
+    assert schema({"mac": "00:11:22:33:44:55"}) == {"mac": "00:11:22:33:44:55"}
+    with patch.object(flow, "_validate_connection", AsyncMock(return_value=None)):
+        assert (await flow.async_step_user({"mac": "00:11:22:33:44:55"}))["type"] == "create_entry"
+
+
+async def test_diagnostics_routes_redact_names_and_addresses(hass, thermostat):
+    from custom_components.panasonic_hc.diagnostics import async_get_config_entry_diagnostics
+
+    scanner = Mock(source="11:22:33:44:55:66", name="Private room")
+    scanner.get_allocations.return_value = SimpleNamespace(free=1, slots=3)
+    scanner.connection_failures.return_value = 2
+    path = SimpleNamespace(scanner=scanner, advertisement=SimpleNamespace(rssi=-65))
+    entry = SimpleNamespace(unique_id=thermostat.mac_address, runtime_data=RuntimeData(thermostat))
+    with patch(
+        "custom_components.panasonic_hc.diagnostics.bluetooth.async_scanner_devices_by_address",
+        return_value=[path],
+    ):
+        result = await async_get_config_entry_diagnostics(hass, entry)
+    assert result["route_candidates"] == [
+        {"remote": True, "rssi": -65, "connect_failures": 2, "free_slots": 1, "total_slots": 3}
+    ]
+    assert "Private room" not in str(result)
+    assert scanner.source not in str(result)
+    assert thermostat.mac_address not in str(result)
+
+
+async def test_reconnect_can_retry_after_cancellation(hass):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.panasonic_hc import async_setup
+
+    entry = MockConfigEntry(domain="panasonic_hc", data={})
+    entry.add_to_hass(hass)
+    await async_setup(hass, {})
+    with patch.object(
+        hass.config_entries, "async_reload", AsyncMock(side_effect=[asyncio.CancelledError(), True])
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await hass.services.async_call(
+                "panasonic_hc", "reconnect", {"entry_id": entry.entry_id}, blocking=True
+            )
+        await hass.services.async_call(
+            "panasonic_hc", "reconnect", {"entry_id": entry.entry_id}, blocking=True
+        )

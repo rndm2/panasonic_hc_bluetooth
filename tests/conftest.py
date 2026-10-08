@@ -6,7 +6,7 @@ import pytest
 from bleak.backends.device import BLEDevice
 
 from custom_components.panasonic_hc.panasonic_hc import PanasonicHC
-from custom_components.panasonic_hc.panasonic_hc_proto import _decode, _encode
+from custom_components.panasonic_hc.protocol import _decode, _encode
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def status_packet(power=True, mode=2, fan=2, temp=22, current=23, eco=0, short=F
 
 
 def notify(thermostat, packet):
-    thermostat.on_notification(Mock(), bytearray(packet))
+    thermostat.on_notification(packet)
 
 
 @pytest.fixture
@@ -62,14 +62,14 @@ def connected(thermostat):
                 notify(thermostat, status_packet())
 
     conn.write_gatt_char = AsyncMock(side_effect=write)
-    thermostat._conn = conn
+    thermostat.transport.client = conn
     notify(thermostat, status_packet())
     return conn
 
 
 @pytest.fixture(autouse=True)
 def skip_hardware_settle_delays(monkeypatch):
-    monkeypatch.setattr("custom_components.panasonic_hc.panasonic_hc.NOTIFY_SETTLE_DELAY", 0)
+    monkeypatch.setattr("custom_components.panasonic_hc.transport.NOTIFY_SETTLE_DELAY", 0)
     monkeypatch.setattr("custom_components.panasonic_hc.panasonic_hc.COMMAND_CONFIRM_TIMEOUT", 0.05)
     monkeypatch.setattr(
         "custom_components.panasonic_hc.panasonic_hc.COMMAND_CONFIRM_INTERVAL", 0.001
