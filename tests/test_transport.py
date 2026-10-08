@@ -20,12 +20,14 @@ async def test_setup_requires_status(thermostat, connected):
     connected.write_gatt_char.side_effect = None
     with (
         patch(
-            "custom_components.panasonic_hc.panasonic_hc.establish_connection",
+            "custom_components.panasonic_hc.transport.establish_connection",
             AsyncMock(return_value=connected),
         ),
         patch("custom_components.panasonic_hc.panasonic_hc.RESPONSE_TIMEOUT", 0.001),
     ):
         with pytest.raises(PanasonicHCException):
+            thermostat.transport.client = None
+            thermostat.ready = False
             await thermostat.async_connect()
     connected.disconnect.assert_awaited_once()
     assert not thermostat.available
@@ -34,10 +36,12 @@ async def test_setup_requires_status(thermostat, connected):
 async def test_notification_failure_cleans_connection(thermostat, connected):
     connected.start_notify.side_effect = BleakError("broken")
     with patch(
-        "custom_components.panasonic_hc.panasonic_hc.establish_connection",
+        "custom_components.panasonic_hc.transport.establish_connection",
         AsyncMock(return_value=connected),
     ):
         with pytest.raises(PanasonicHCException):
+            thermostat.transport.client = None
+            thermostat.ready = False
             await thermostat.async_connect()
     connected.disconnect.assert_awaited_once()
 
@@ -46,9 +50,11 @@ async def test_successful_connect(thermostat, connected):
     route = Mock(return_value=thermostat.device)
     thermostat._device_callback = route
     with patch(
-        "custom_components.panasonic_hc.panasonic_hc.establish_connection",
+        "custom_components.panasonic_hc.transport.establish_connection",
         AsyncMock(return_value=connected),
     ):
+        thermostat.transport.client = None
+        thermostat.ready = False
         await thermostat.async_connect()
     assert thermostat.available
     route.assert_called_once()
@@ -93,10 +99,12 @@ async def test_invalid_mode_sends_nothing(thermostat, connected):
 async def test_cancelled_connect_cleans_up(thermostat, connected):
     connected.start_notify.side_effect = asyncio.CancelledError
     with patch(
-        "custom_components.panasonic_hc.panasonic_hc.establish_connection",
+        "custom_components.panasonic_hc.transport.establish_connection",
         AsyncMock(return_value=connected),
     ):
         with pytest.raises(asyncio.CancelledError):
+            thermostat.transport.client = None
+            thermostat.ready = False
             await thermostat.async_connect()
     connected.disconnect.assert_awaited_once()
 
@@ -104,7 +112,7 @@ async def test_cancelled_connect_cleans_up(thermostat, connected):
 def test_disconnect_immediately_unavailable(thermostat, connected):
     listener = Mock()
     thermostat.register_update_callback(listener)
-    thermostat._disconnected(connected)
+    thermostat.transport._disconnected(connected)
     assert not thermostat.available
     listener.assert_called_once()
 
@@ -121,7 +129,7 @@ def test_resolve_device_refreshes_ha_lookup(thermostat, device):
 
 
 async def test_no_energy_requests(thermostat, connected):
-    from custom_components.panasonic_hc.panasonic_hc_proto import _decode
+    from custom_components.panasonic_hc.protocol import _decode
 
     await thermostat.async_get_status()
     assert connected.write_gatt_char.await_count == 1
@@ -130,7 +138,7 @@ async def test_no_energy_requests(thermostat, connected):
 
 async def test_disconnect_wakes_polling(thermostat, connected):
     thermostat.disconnected_event.clear()
-    thermostat._disconnected(connected)
+    thermostat.transport._disconnected(connected)
     assert thermostat.disconnected_event.is_set()
 
 
@@ -138,33 +146,39 @@ async def test_backend_cleanup_assertion_preserves_retryable_setup_error(thermos
     connected.start_notify.side_effect = BleakError("Not connected")
     connected.disconnect.side_effect = AssertionError("services not cleared")
     with patch(
-        "custom_components.panasonic_hc.panasonic_hc.establish_connection",
+        "custom_components.panasonic_hc.transport.establish_connection",
         AsyncMock(return_value=connected),
     ):
         with pytest.raises(PanasonicHCException, match="initialize") as exc:
+            thermostat.transport.client = None
+            thermostat.ready = False
             await thermostat.async_connect()
     assert isinstance(exc.value.__cause__, BleakError)
     assert not thermostat.available
-    assert thermostat._conn is None
+    assert thermostat.transport.client is None
 
 
 async def test_cleanup_assertion_preserves_cancellation(thermostat, connected):
     connected.start_notify.side_effect = asyncio.CancelledError
     connected.disconnect.side_effect = AssertionError("services not cleared")
     with patch(
-        "custom_components.panasonic_hc.panasonic_hc.establish_connection",
+        "custom_components.panasonic_hc.transport.establish_connection",
         AsyncMock(return_value=connected),
     ):
         with pytest.raises(asyncio.CancelledError):
+            thermostat.transport.client = None
+            thermostat.ready = False
             await thermostat.async_connect()
-    assert thermostat._conn is None
+    assert thermostat.transport.client is None
 
 
 async def test_queued_notification_from_old_connection_is_ignored(thermostat, connected):
     with patch(
-        "custom_components.panasonic_hc.panasonic_hc.establish_connection",
+        "custom_components.panasonic_hc.transport.establish_connection",
         AsyncMock(return_value=connected),
     ):
+        thermostat.transport.client = None
+        thermostat.ready = False
         await thermostat.async_connect()
     callback = connected.start_notify.call_args.args[1]
     await thermostat.async_disconnect()
@@ -177,17 +191,19 @@ async def test_queued_notification_from_old_connection_is_ignored(thermostat, co
 async def test_unexpected_setup_error_still_disconnects(thermostat, connected):
     connected.start_notify.side_effect = RuntimeError("backend failure")
     with patch(
-        "custom_components.panasonic_hc.panasonic_hc.establish_connection",
+        "custom_components.panasonic_hc.transport.establish_connection",
         AsyncMock(return_value=connected),
     ):
         with pytest.raises(RuntimeError, match="backend failure"):
+            thermostat.transport.client = None
+            thermostat.ready = False
             await thermostat.async_connect()
     connected.disconnect.assert_awaited_once()
-    assert thermostat._conn is None
+    assert thermostat.transport.client is None
 
 
 async def test_delayed_command_confirmation_does_not_resend_command(thermostat, connected):
-    from custom_components.panasonic_hc.panasonic_hc_proto import _decode
+    from custom_components.panasonic_hc.protocol import _decode
 
     requests = 0
     writes = []
@@ -246,7 +262,7 @@ def test_partial_packets_do_not_renew_temperature_freshness(thermostat):
         notify(thermostat, parcel(bytes([65, 64, 0, 0, 120])))
         assert thermostat.current_temperature is None
         assert thermostat.status.curtemp is None
-        assert thermostat._last_temperature == 24.5
+        assert thermostat.state.temperature == 24.5
 
 
 async def test_temperature_expiry_publishes_without_new_packets(thermostat):
@@ -280,7 +296,7 @@ async def test_combined_temperature_and_mode_validated_before_writes(thermostat,
 
 
 async def test_combined_temperature_and_mode_confirmation(thermostat, connected):
-    from custom_components.panasonic_hc.panasonic_hc_proto import _decode
+    from custom_components.panasonic_hc.protocol import _decode
 
     async def write(uuid, data):
         if _decode(data)[5] == 129:
@@ -324,7 +340,7 @@ async def test_cancelled_queued_command_does_not_unlock_another_operation(thermo
 
 
 async def test_combined_off_and_temperature(thermostat, connected):
-    from custom_components.panasonic_hc.panasonic_hc_proto import _decode
+    from custom_components.panasonic_hc.protocol import _decode
 
     async def write(uuid, data):
         if _decode(data)[5] == 129:
@@ -339,3 +355,88 @@ async def test_combined_off_and_temperature(thermostat, connected):
         65,
         129,
     ]
+
+
+def test_malformed_second_status_does_not_partially_apply_frame(thermostat, connected):
+    from custom_components.panasonic_hc.protocol import Component, Operation, Packet, Parcel
+
+    good = Parcel.parse(status_packet(temp=25)).packets[0]
+    frame = Parcel(Component.INDOOR, Component.APP, Operation.RESPONSE, (good, Packet(129, b"\0")))
+    old = thermostat.status
+    notify(thermostat, frame.encode())
+    assert thermostat.status is old
+    assert thermostat.parse_errors == 1
+
+
+async def test_reconnect_clears_optional_preset_from_previous_session(thermostat, connected):
+    notify(thermostat, status_packet(eco=1))
+    await thermostat.async_disconnect()
+    notify(thermostat, status_packet(short=True))
+    assert thermostat.status.powersave is None
+
+
+async def test_transaction_deadline_includes_writes(thermostat, connected):
+    connected.write_gatt_char.side_effect = lambda *args: None
+
+    async def hang(*args):
+        # A notification during a stuck write must not make its timeout harmless.
+        notify(thermostat, status_packet())
+        await asyncio.Event().wait()
+
+    connected.write_gatt_char.side_effect = hang
+    with pytest.raises(PanasonicHCException, match="confirm"):
+        await thermostat.async_set_temperature(25, "cool")
+    assert connected.write_gatt_char.await_count == 1
+    assert not thermostat.available
+    assert thermostat.disconnected_event.is_set()
+
+
+async def test_cancelled_active_command_invalidates_session(thermostat, connected):
+    started = asyncio.Event()
+
+    async def hang(*args):
+        started.set()
+        await asyncio.Event().wait()
+
+    connected.write_gatt_char.side_effect = hang
+    task = asyncio.create_task(thermostat.async_set_temperature(25))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not thermostat.available
+    assert not thermostat.transport.accept_notifications
+    assert not thermostat._lock.locked()
+
+
+async def test_failed_write_translates_unexpected_backend_exception(thermostat, connected):
+    connected.write_gatt_char.side_effect = RuntimeError("backend broken")
+    with pytest.raises(PanasonicHCException, match="write"):
+        await thermostat.async_set_temperature(25)
+    assert not thermostat.available
+    assert thermostat.command_failures == 1
+
+
+async def test_already_connected_does_not_create_second_client(thermostat, connected):
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection", AsyncMock()
+    ) as create:
+        await thermostat.async_connect()
+    create.assert_not_awaited()
+    assert thermostat.available
+
+
+async def test_late_notification_cannot_revive_failed_session(thermostat, connected):
+    thermostat.transport.client = None
+    thermostat.ready = False
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection",
+        AsyncMock(return_value=connected),
+    ):
+        await thermostat.async_connect()
+    callback = connected.start_notify.call_args.args[1]
+    thermostat._lost()
+    callback(Mock(), bytearray(status_packet(temp=25)))
+    assert not thermostat.available
+    assert thermostat.current_temperature is None
+    await thermostat.async_disconnect()

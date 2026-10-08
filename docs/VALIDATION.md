@@ -1,5 +1,22 @@
 # Validation
 
+## 0.2.0 — architecture rewrite
+
+- 106 tests, 91% statement coverage; Ruff lint/format, mypy and diff checks pass.
+- HA configuration check and staging restart completed on HA 2026.10.0.
+- Existing entry and climate identity reused; integration diagnostics report version 0.2.0.
+- Initial local BlueZ connection failed with `Not connected`. Previously authorized temporary
+  local-adapter isolation allowed proxy reconnect; the local adapter was restored immediately.
+- Live diagnostics downloaded successfully: ready/connected, zero malformed packets and zero
+  rejected temperature samples at that observation; all three candidate routes and slots reported.
+- Combined cool/target 25 → 25.5 → 25 °C succeeded. Five scoped event/snapshot samples,
+  zero missing current-temperature values; measured current stayed 22.5 °C.
+- Nearby-device form rendered through the real HA config-flow API; test flow was aborted.
+  That check exposed unnamed MAC-only advertisements cluttering the picker; they are now filtered.
+- Recovery automation received only its authorized stale-entry-ID replacement; semantic YAML
+  equality verified all other values unchanged, `ha core check` passed and `automation.reload` succeeded.
+- Owner clarified that an automation may set 25 °C. This is accepted behavior, not a defect.
+
 ## 0.1.2 — temperature state and action review
 
 - 83 automated tests pass; Ruff, formatting, mypy, HACS and hassfest pass.
@@ -13,8 +30,8 @@
   readings, queue timeout/cancellation, combined off/mode actions and disabled-entry reconnect.
 - Hardware test does not prove every packet variant, all mode transitions or proxy failover.
 - Follow-up observation: after accepting a restored 24.5 °C target, both this integration and
-  an independent ESPHome climate later reported 25 °C. The cause was not isolated; the short
-  event test proves the flicker fix, not long-term target persistence or absence of other control.
+  an independent ESPHome climate later reported 25 °C. The owner later confirmed that an
+  automation may set 25 °C; the short event test proves the flicker fix, not exclusive control.
 
 ## Historical 0.1.1 validation
 
@@ -58,3 +75,10 @@ No test here verifies compressor operation, every HVAC mode, pairing a new proxy
 failover or other controller models. Manual reconnect does not reset bonds, restart a proxy,
 pin a route, or make an unpaired adapter usable. A stronger unpaired adapter can be chosen by HA.
 Energy accounting is intentionally absent.
+
+Additional 0.2.0 live command checks: current `cool` mode and power-on while already on,
+fan auto → low → medium → high → auto, preset eco → none → eco all succeeded with
+matching returned status. Fan and preset were restored. Final observation after those
+commands: cool, target 24.5 °C, current 22.5 °C, auto fan, eco. Target changes from other
+controllers/automation or preset behavior are reported, not repeatedly overwritten.
+Actual off/on cycling and other physical HVAC modes were not exercised.

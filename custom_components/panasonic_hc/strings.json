@@ -7,7 +7,7 @@
         "data": {
           "mac": "MAC address"
         },
-        "description": "Pair the controller with your Bluetooth adapter or ESPHome proxy first."
+        "description": "Select your Panasonic controller from nearby Bluetooth devices, or enter its MAC address. Renamed devices may appear under their custom name. Pair it with your adapter or ESPHome proxy first; this screen checks the connection and does not create a Bluetooth bond."
       },
       "init": {
         "title": "Connect Panasonic H&C Bluetooth",
@@ -16,7 +16,8 @@
     },
     "error": {
       "invalid_mac_address": "Enter six hexadecimal pairs separated by colons (AA:BB:CC:DD:EE:FF).",
-      "cannot_connect": "Unable to read the controller. Check Bluetooth range, pairing and active proxy connections, then retry."
+      "cannot_connect": "Unable to read the controller. Check Bluetooth range, pairing and active proxy connections, then retry.",
+      "unknown": "An unexpected Bluetooth error occurred. See the integration logs and retry."
     },
     "abort": {
       "already_configured": "Device is already configured"
