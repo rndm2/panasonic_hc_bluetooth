@@ -26,6 +26,9 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+          # Upstream has no license grant. Custom repository only; see README.
+          ignore: license
+          comment: false
   hassfest:
     runs-on: ubuntu-latest
     steps:

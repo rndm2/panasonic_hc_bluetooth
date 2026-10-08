@@ -7,6 +7,7 @@
   command compatibility, optional fields, setup/cleanup/unload, confirmed command failures,
   stable climate identity, manual reconnect, concurrent request rejection and proxy route refresh.
 - Ruff, formatting, mypy and `git diff --check` pass.
+- HACS custom-repository CI excludes only the license check because upstream supplied no license.
 - Energy removal test verifies that status polling sends no consumption requests.
 
 ## Live controller

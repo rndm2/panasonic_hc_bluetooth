@@ -102,6 +102,8 @@ The upstream snapshot contains **no license grant**. Original authorship and Git
 are retained. This repository does not claim ownership of upstream work and does not
 apply a new license to it. Attribution is not a substitute for permission; clarify the
 upstream license before assuming broad redistribution or relicensing rights.
+HACS CI explicitly excludes the license check for this custom repository; this is not
+a claim of eligibility for inclusion in the default HACS catalog.
 
 ## Pairing
 
