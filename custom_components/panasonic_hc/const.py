@@ -1,9 +1,7 @@
-"""Constants for the Panasonic H&C integration."""
+"""Stable integration identity and verified controller model."""
 
+# Intentionally retained across the repository rename to preserve registrations.
 DOMAIN = "panasonic_hc"
-
 MANUFACTURER = "Panasonic"
+# Only this model has been verified; discovery does not imply other model support.
 MODEL = "CZ-RTC6BLW"
-
-SIGNAL_THERMOSTAT_DISCONNECTED = f"{DOMAIN}.thermostat_disconnected"
-SIGNAL_THERMOSTAT_CONNECTED = f"{DOMAIN}.thermostat_connected"

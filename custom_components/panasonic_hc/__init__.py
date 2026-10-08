@@ -1,115 +1,129 @@
-"""The Panasonic H&C integration."""
+"""Panasonic H&C Bluetooth integration."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import suppress
+from dataclasses import dataclass
 
+import probatio
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
 
-from .const import DOMAIN, SIGNAL_THERMOSTAT_CONNECTED, SIGNAL_THERMOSTAT_DISCONNECTED
+from .const import DOMAIN
 from .panasonic_hc import PanasonicHC, PanasonicHCException
 
-PLATFORMS: list[Platform] = [Platform.CLIMATE, Platform.SENSOR]
-
-type PanasonicHCConfigEntry = ConfigEntry[PanasonicHC]  # noqa: F821
-
+PLATFORMS = [Platform.CLIMATE, Platform.BUTTON]
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Panasonic H&C from a config entry."""
+@dataclass
+class RuntimeData:
+    """Entry-owned connection and polling task."""
 
-    mac_address: str | None = entry.unique_id
+    thermostat: PanasonicHC
+    task: asyncio.Task[None] | None = None
 
-    device = bluetooth.async_ble_device_from_address(
-        hass, mac_address.upper(), connectable=True
+
+type PanasonicHCConfigEntry = ConfigEntry[RuntimeData]
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Expose recovery even while the entry is waiting for a Bluetooth route."""
+    locks: dict[str, asyncio.Lock] = {}
+
+    async def reconnect(call: ServiceCall) -> None:
+        entry_id = call.data["entry_id"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != DOMAIN:
+            raise ServiceValidationError("Select a Panasonic H&C Bluetooth config entry")
+        lock = locks.setdefault(entry_id, asyncio.Lock())
+        if lock.locked():
+            raise HomeAssistantError("A reconnect is already in progress")
+        async with lock:
+            if not await hass.config_entries.async_reload(entry_id):
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN, translation_key="reconnect_failed"
+                )
+
+    hass.services.async_register(
+        DOMAIN,
+        "reconnect",
+        reconnect,
+        schema=probatio.Schema({probatio.Required("entry_id"): str}),
     )
-
-    if device is None:
-        raise ConfigEntryNotReady(f"[{mac_address}] Device could not be found")
-
-    thermostat = PanasonicHC(ble_device=device, mac_address=mac_address)
-
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = thermostat
-
-    entry.async_on_unload(entry.add_update_listener(update_listener))
-
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    entry.async_create_background_task(
-        hass, _async_run_thermostat(hass, entry), entry.entry_id
-    )
-
     return True
 
 
-async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle config entry update."""
+async def async_setup_entry(hass: HomeAssistant, entry: PanasonicHCConfigEntry) -> bool:
+    address = entry.unique_id
+    if address is None:
+        raise ConfigEntryNotReady("Missing Bluetooth address")
 
-    await hass.config_entries.async_reload(entry.entry_id)
+    def get_device():
+        return bluetooth.async_ble_device_from_address(hass, address.upper(), connectable=True)
 
-
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        thermostat: PanasonicHC = hass.data[DOMAIN].pop(entry.entry_id)
+    device = get_device()
+    if device is None:
+        raise ConfigEntryNotReady("Controller has no connectable Bluetooth route")
+    thermostat = PanasonicHC(device, address, get_device)
+    try:
+        await thermostat.async_connect()
+    except PanasonicHCException as err:
+        raise ConfigEntryNotReady(str(err)) from err
+    entry.runtime_data = RuntimeData(thermostat)
+    try:
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except BaseException:
         await thermostat.async_disconnect()
+        raise
+    entry.runtime_data.task = entry.async_create_background_task(
+        hass, _async_run_thermostat(thermostat), "panasonic_hc_poll"
+    )
+    return True
 
-    return unload_ok
+
+async def async_unload_entry(hass: HomeAssistant, entry: PanasonicHCConfigEntry) -> bool:
+    if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        return False
+    runtime = entry.runtime_data
+    if runtime.task is not None:
+        runtime.task.cancel()
+        with suppress(asyncio.CancelledError):
+            await runtime.task
+    await runtime.thermostat.async_disconnect()
+    return True
 
 
-async def _async_run_thermostat(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Run the thermostat."""
-
-    thermostat = hass.data[DOMAIN][entry.entry_id]
-
-    await _async_reconnect_thermostat(hass, entry)
-
-    while True:
-        try:
-            await thermostat.async_get_status()
-        except PanasonicHCException as e:
-            if not thermostat.is_connected:
-                _LOGGER.error(
-                    "[%s] PanasonicHC device disconnected", thermostat.mac_address
-                )
-
-                async_dispatcher_send(
-                    hass, f"{SIGNAL_THERMOSTAT_DISCONNECTED}_{thermostat.mac_address}"
-                )
-                await _async_reconnect_thermostat(hass, entry)
+async def _async_run_thermostat(thermostat: PanasonicHC) -> None:
+    delay = 5
+    unavailable_logged = False
+    try:
+        while True:
+            try:
+                if not thermostat.available:
+                    await thermostat.async_disconnect()
+                    await thermostat.async_connect()
+                await thermostat.async_get_status()
+            except PanasonicHCException as err:
+                if not unavailable_logged:
+                    _LOGGER.warning("Panasonic controller unavailable: %s", err)
+                    unavailable_logged = True
+                await thermostat.async_disconnect()
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 300)
                 continue
-
-            _LOGGER.error(
-                "[%s] Error updating PanasonicHC device %s", thermostat.mac_address, e
-            )
-
-        await asyncio.sleep(60 if thermostat.status.power else 300)
-
-
-async def _async_reconnect_thermostat(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reconnect thermostat."""
-
-    thermostat = hass.data[DOMAIN][entry.entry_id]
-
-    while True:
-        try:
-            await thermostat.async_connect()
-        except PanasonicHCException:
-            await asyncio.sleep(20)
-            continue
-
-        _LOGGER.debug("[%s] PanasonicHC device connected", thermostat.mac_address)
-
-        async_dispatcher_send(
-            hass, f"{SIGNAL_THERMOSTAT_CONNECTED}_{thermostat.mac_address}"
-        )
-
-        return
+            if unavailable_logged:
+                _LOGGER.info("Panasonic controller connection restored")
+                unavailable_logged = False
+            delay = 5
+            status = thermostat.status
+            with suppress(TimeoutError):
+                async with asyncio.timeout(60 if status is not None and status.power else 300):
+                    await thermostat.disconnected_event.wait()
+    finally:
+        await thermostat.async_disconnect()

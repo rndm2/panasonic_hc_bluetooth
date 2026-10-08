@@ -1,0 +1,35 @@
+[project]
+name = "panasonic-hc-bluetooth"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = ["bleak-retry-connector==4.7.1"]
+
+[project.optional-dependencies]
+test = ["homeassistant==2026.10.0", "pytest>=9,<10", "pytest-asyncio>=1,<2", "pytest-cov>=7,<8", "pytest-homeassistant-custom-component==0.13.371", "aiousbwatcher==1.1.2", "serialx==1.11.0", "dbus-fast==5.0.22", "ruff>=0.16,<0.17", "mypy>=2.4,<3"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.mypy]
+python_version = "3.14"
+ignore_missing_imports = true
+follow_imports = "silent"
+check_untyped_defs = true
+files = ["custom_components/panasonic_hc"]
+
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["custom_components*"]

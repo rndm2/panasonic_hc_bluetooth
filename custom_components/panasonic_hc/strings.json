@@ -1,22 +1,55 @@
 {
   "config": {
-    "flow_title": "Panasonic H&C Control [{mac}]",
+    "flow_title": "Panasonic H&C Bluetooth [{mac}]",
     "step": {
       "user": {
-        "title": "Configure new Panasonic H&C device",
+        "title": "Connect Panasonic H&C Bluetooth",
         "data": {
           "mac": "MAC address"
-        }
+        },
+        "description": "Pair the controller with your Bluetooth adapter or ESPHome proxy first."
       },
       "init": {
-          "title": "Configure new Panasonic H&C device"
-      },
-      "confirm": {
-        "description": "[%key:common::config_flow::description::confirm_setup%]"
+        "title": "Connect Panasonic H&C Bluetooth",
+        "description": "Connect to controller {mac}. Complete Bluetooth pairing first."
       }
     },
+    "error": {
+      "invalid_mac_address": "Enter six hexadecimal pairs separated by colons (AA:BB:CC:DD:EE:FF).",
+      "cannot_connect": "Unable to read the controller. Check Bluetooth range, pairing and active proxy connections, then retry."
+    },
     "abort": {
-      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+      "already_configured": "Device is already configured"
+    }
+  },
+  "exceptions": {
+    "invalid_setting": {
+      "message": "The requested controller setting is invalid."
+    },
+    "command_failed": {
+      "message": "The controller did not confirm the command. Check its state and Bluetooth connection before retrying."
+    },
+    "reconnect_failed": {
+      "message": "The controller could not reconnect. Check proxy availability and pairing; Home Assistant will retry setup."
+    }
+  },
+  "entity": {
+    "button": {
+      "reconnect": {
+        "name": "Reconnect Bluetooth"
+      }
+    }
+  },
+  "services": {
+    "reconnect": {
+      "name": "Reconnect Bluetooth",
+      "description": "Reload the selected controller connection and let Home Assistant select an available Bluetooth adapter or proxy. Does not change pairing or HVAC settings.",
+      "fields": {
+        "entry_id": {
+          "name": "Integration entry",
+          "description": "Panasonic controller to reconnect."
+        }
+      }
     }
   }
 }
