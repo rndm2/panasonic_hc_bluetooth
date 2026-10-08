@@ -37,7 +37,7 @@ async def test_temperature_uses_confirmed_state(thermostat, connected):
 
 
 async def test_setup_unavailable_route():
-    entry = SimpleNamespace(unique_id="aa:bb:cc:dd:ee:ff")
+    entry = SimpleNamespace(unique_id="aa:bb:cc:dd:ee:ff", data={})
     with patch(
         "custom_components.panasonic_hc.bluetooth.async_ble_device_from_address", return_value=None
     ):
@@ -46,7 +46,7 @@ async def test_setup_unavailable_route():
 
 
 async def test_setup_failed_status_retries(device):
-    entry = SimpleNamespace(unique_id=device.address)
+    entry = SimpleNamespace(unique_id=device.address, data={})
     with (
         patch(
             "custom_components.panasonic_hc.bluetooth.async_ble_device_from_address",
@@ -384,3 +384,50 @@ async def test_reconnect_can_retry_after_cancellation(hass):
         await hass.services.async_call(
             "panasonic_hc", "reconnect", {"entry_id": entry.entry_id}, blocking=True
         )
+
+
+async def test_flow_persists_only_successfully_confirmed_source(hass, device, thermostat):
+    flow = PanasonicHCConfigFlow()
+    flow.hass = hass
+    flow.context = {"source": "user"}
+    flow.handler = "panasonic_hc"
+    thermostat.transport.routes.preferred = "CONFIRMED_PROXY"
+    thermostat.async_connect = AsyncMock()
+    thermostat.async_disconnect = AsyncMock()
+    with (
+        patch(
+            "custom_components.panasonic_hc.config_flow.bluetooth.async_ble_device_from_address",
+            return_value=device,
+        ),
+        patch("custom_components.panasonic_hc.config_flow.PanasonicHC", return_value=thermostat),
+    ):
+        result = await flow.async_step_user({"mac": device.address})
+    assert result["type"] == "create_entry"
+    assert result["data"] == {"preferred_source": "CONFIRMED_PROXY"}
+    thermostat.async_disconnect.assert_awaited_once()
+
+
+async def test_setup_restores_preferred_source(hass, device, thermostat):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entry = MockConfigEntry(
+        domain="panasonic_hc", unique_id=device.address.lower(), data={"preferred_source": "PROXY"}
+    )
+    entry.add_to_hass(hass)
+    observed = []
+
+    async def connect():
+        observed.append(thermostat.transport.routes.preferred)
+        raise PanasonicHCException("stop before platforms")
+
+    thermostat.async_connect = AsyncMock(side_effect=connect)
+    with (
+        patch(
+            "custom_components.panasonic_hc.bluetooth.async_ble_device_from_address",
+            return_value=device,
+        ),
+        patch("custom_components.panasonic_hc.PanasonicHC", return_value=thermostat),
+    ):
+        with pytest.raises(ConfigEntryNotReady):
+            await async_setup_entry(hass, entry)
+    assert observed == ["PROXY"]

@@ -1,5 +1,16 @@
 # Validation
 
+## 0.2.1 — adding after deletion and route fallback
+
+- Reproduced the pre-fix `cannot_connect` through HA's native config-flow API: local GATT connection succeeded but readiness failed while a bonded proxy was available.
+- Staged 0.2.1, passed HA configuration check and restarted Core. No adapters or proxies were disabled or restarted.
+- The owner then added the deleted controller through the UI and reported it working. Independently verified the new entry is loaded, the original climate entity ID is reused, and status/current temperature are available.
+- Saved preferred source matches the bonded proxy. HA connection allocations independently confirm the controller occupies that proxy, with both other adapters still enabled and unused by this controller.
+- Manual Panasonic reconnect succeeded and retained the same proxy.
+- Updated the existing recovery automation only to resolve its entry ID from the stable climate entity. Checked the template live, verified YAML semantic equality except that field, passed `ha core check` and reloaded automations without running their actions.
+- 117 tests, 92% statement coverage; Ruff, formatting, mypy and whitespace checks pass. Tests cover failed notification/status, bounded failure, preferred-source persistence, missing/busy preference and isolation from other BLE clients.
+- No new pairing, proxy power-loss test or physical HVAC mode cycling was performed.
+
 ## 0.2.0 — architecture rewrite
 
 - 106 tests, 91% statement coverage; Ruff lint/format, mypy and diff checks pass.
@@ -69,7 +80,7 @@
 - Some short/ambiguous status variants report unknown current temperature; target-temperature
   confirmation is independent of that measurement. No guessed measurement is published.
 
-## Remaining limits
+## Historical 0.1.x limits
 
 No test here verifies compressor operation, every HVAC mode, pairing a new proxy, power-loss
 failover or other controller models. Manual reconnect does not reset bonds, restart a proxy,

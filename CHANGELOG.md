@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 — 2026-10-09
+
+- Fix UI setup rejecting a reachable controller after HA selects a route that fails notification/status readiness.
+- Try other routes within the Panasonic client without disabling adapters or changing shared scanner state.
+- Remember the first status-confirmed source across config-flow validation and entry setup/restart.
+- Bound route search, release failed sessions and retain HA connection-slot management.
+- Add regression tests against the real HA Bluetooth wrapper; document the protected-hook compatibility dependency.
+
 ## 0.2.0 — 2026-10-09
 
 - Rewrite the controller core into typed protocol, state, transport, transaction and runtime layers.

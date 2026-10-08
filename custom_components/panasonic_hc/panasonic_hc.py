@@ -21,6 +21,7 @@ RESPONSE_TIMEOUT = 15
 COMMAND_QUEUE_TIMEOUT = 5
 COMMAND_CONFIRM_TIMEOUT = 15
 COMMAND_CONFIRM_INTERVAL = 0.5
+CONNECTION_DEADLINE = 90
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -116,19 +117,41 @@ class PanasonicHC:
             if self.available:
                 return
             self._loop = asyncio.get_running_loop()
-            self._lost()
+            routes = self.transport.routes
+            routes.excluded.clear()
             try:
-                await self.transport.connect()
-                await self._request_status()
+                async with asyncio.timeout(CONNECTION_DEADLINE):
+                    while True:
+                        self._lost()
+                        try:
+                            await self.transport.connect()
+                            await self._request_status()
+                            if not self.available:
+                                raise PanasonicHCException(
+                                    "Controller disconnected during initialization"
+                                )
+                        except (BleakError, OSError, TimeoutError, PanasonicHCException) as err:
+                            failed_source = routes.selected
+                            await self.async_disconnect()
+                            if failed_source is None or failed_source in routes.excluded:
+                                raise
+                            routes.excluded.add(failed_source)
+                            _LOGGER.debug(
+                                "Controller route %s failed readiness: %s; trying another route",
+                                failed_source,
+                                err,
+                            )
+                            continue
+                        # Only a complete status handshake makes a route preferred.
+                        routes.preferred = routes.selected
+                        self.disconnected_event.clear()
+                        return
             except (BleakError, OSError, TimeoutError, PanasonicHCException) as err:
                 await self.async_disconnect()
                 raise PanasonicHCException(f"Could not initialize controller: {err}") from err
             except BaseException:
                 await self.async_disconnect()
                 raise
-            if not self.available:
-                raise PanasonicHCException("Controller disconnected during initialization")
-            self.disconnected_event.clear()
 
     async def async_disconnect(self) -> None:
         self._lost()

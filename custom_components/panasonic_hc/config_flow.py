@@ -26,6 +26,7 @@ def validate_mac(mac: str) -> bool:
 class PanasonicHCConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
     mac_address: str
+    _preferred_source: str | None = None
 
     async def _validate_connection(self) -> str | None:
         device = bluetooth.async_ble_device_from_address(
@@ -36,6 +37,7 @@ class PanasonicHCConfigFlow(ConfigFlow, domain=DOMAIN):
         thermostat = PanasonicHC(device, self.mac_address)
         try:
             await thermostat.async_connect()
+            self._preferred_source = thermostat.transport.routes.preferred
         except PanasonicHCException:
             return "cannot_connect"
         except Exception:
@@ -111,5 +113,6 @@ class PanasonicHCConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def _create_entry(self) -> ConfigFlowResult:
         return self.async_create_entry(
-            title=f"{MODEL}_{self.mac_address[-8:].replace(':', '')}", data={}
+            title=f"{MODEL}_{self.mac_address[-8:].replace(':', '')}",
+            data={"preferred_source": self._preferred_source} if self._preferred_source else {},
         )

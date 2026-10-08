@@ -440,3 +440,87 @@ async def test_late_notification_cannot_revive_failed_session(thermostat, connec
     assert not thermostat.available
     assert thermostat.current_temperature is None
     await thermostat.async_disconnect()
+
+
+async def test_notification_failure_tries_another_route_without_resending_commands(
+    thermostat, connected
+):
+    first = Mock(is_connected=True)
+    first.disconnect = AsyncMock()
+    first.start_notify = AsyncMock(side_effect=BleakError("Not connected"))
+    exclusions = []
+
+    async def establish(*args, route_policy, **kwargs):
+        exclusions.append(set(route_policy.excluded))
+        route_policy.selected = "LOCAL" if len(exclusions) == 1 else "PROXY"
+        return first if len(exclusions) == 1 else connected
+
+    thermostat.transport.client = None
+    thermostat.ready = False
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection", side_effect=establish
+    ):
+        await thermostat.async_connect()
+    assert exclusions == [set(), {"LOCAL"}]
+    assert thermostat.available
+    assert thermostat.transport.routes.preferred == "PROXY"
+    first.disconnect.assert_awaited_once()
+    await thermostat.async_disconnect()
+
+
+async def test_missing_status_tries_next_route_before_flow_fails(thermostat, connected):
+    silent = Mock(is_connected=True)
+    silent.start_notify = AsyncMock()
+    silent.disconnect = AsyncMock()
+    silent.write_gatt_char = AsyncMock()
+    attempts = []
+
+    async def establish(*args, route_policy, **kwargs):
+        attempts.append(set(route_policy.excluded))
+        route_policy.selected = "SILENT" if len(attempts) == 1 else "PROXY"
+        return silent if len(attempts) == 1 else connected
+
+    thermostat.transport.client = None
+    thermostat.ready = False
+    with (
+        patch(
+            "custom_components.panasonic_hc.transport.establish_connection", side_effect=establish
+        ),
+        patch("custom_components.panasonic_hc.panasonic_hc.RESPONSE_TIMEOUT", 0.01),
+    ):
+        await thermostat.async_connect()
+    assert attempts == [set(), {"SILENT"}]
+    assert thermostat.transport.routes.preferred == "PROXY"
+    await thermostat.async_disconnect()
+
+
+async def test_exhausted_routes_fail_without_infinite_retries(thermostat):
+    calls = 0
+
+    async def establish(*args, route_policy, **kwargs):
+        nonlocal calls
+        calls += 1
+        route_policy.selected = "BAD" if calls == 1 else None
+        raise BleakError("No usable route")
+
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection", side_effect=establish
+    ):
+        with pytest.raises(PanasonicHCException, match="No usable route"):
+            await thermostat.async_connect()
+    assert calls == 2
+    assert not thermostat.available
+
+
+async def test_route_search_has_total_deadline(thermostat):
+    async def hang(*args, **kwargs):
+        await asyncio.Event().wait()
+
+    with (
+        patch("custom_components.panasonic_hc.transport.establish_connection", side_effect=hang),
+        patch("custom_components.panasonic_hc.panasonic_hc.CONNECTION_DEADLINE", 0.01),
+    ):
+        with pytest.raises(PanasonicHCException):
+            await thermostat.async_connect()
+    assert thermostat.transport.client is None
+    assert not thermostat.available
