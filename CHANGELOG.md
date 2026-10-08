@@ -4,6 +4,20 @@ All notable changes are documented here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-08
+
+### Fixed
+
+- Preserve current temperature across partial/ambiguous status packets instead of flashing unknown.
+- Keep the validation anchor separate from displayed state so repeated invalid readings cannot bypass it.
+- Expire measurements after ten minutes without a valid update, even without new notifications;
+  cancel expiry on disconnect and discard old measurements when the connection is closed.
+- Honor optional HVAC mode in combined temperature actions and validate all arguments before writes.
+- Bound command queue waiting to five seconds; expose the actual failure reason in HA action errors.
+- Reject reconnect for disabled entries instead of reporting success without a connection.
+- Recover the background polling worker after unexpected backend exceptions, with traceback logging.
+
+
 ## [0.1.1] - 2026-10-08
 
 ### Fixed
@@ -61,6 +75,8 @@ The internal domain `panasonic_hc`, climate unique ID and Bluetooth device ident
 unchanged. Keep the existing config entry during migration. The old energy entity may remain
 unavailable in the registry. No new license is applied to inherited, unlicensed upstream code.
 
-[Unreleased]: https://github.com/rndm2/panasonic_hc_bluetooth/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/rndm2/panasonic_hc_bluetooth/compare/v0.1.2...HEAD
 [0.1.0]: https://github.com/rndm2/panasonic_hc_bluetooth/releases/tag/v0.1.0
 [0.1.1]: https://github.com/rndm2/panasonic_hc_bluetooth/releases/tag/v0.1.1
+
+[0.1.2]: https://github.com/rndm2/panasonic_hc_bluetooth/releases/tag/v0.1.2

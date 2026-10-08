@@ -274,3 +274,44 @@ async def test_diagnostics_before_successful_setup():
         "has_status": False,
         "invalid_packets": 0,
     }
+
+
+async def test_set_temperature_forwards_optional_hvac_mode(thermostat):
+    thermostat.async_set_temperature = AsyncMock()
+    climate = PanasonicHCClimate(thermostat)
+    await climate.async_set_temperature(temperature=25, hvac_mode="heat")
+    thermostat.async_set_temperature.assert_awaited_once_with(25, "heat")
+
+
+async def test_reconnect_rejects_disabled_entry(hass):
+    from homeassistant.config_entries import ConfigEntryDisabler
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.panasonic_hc import async_setup
+
+    entry = MockConfigEntry(domain="panasonic_hc", data={}, disabled_by=ConfigEntryDisabler.USER)
+    entry.add_to_hass(hass)
+    await async_setup(hass, {})
+    with patch.object(hass.config_entries, "async_reload", AsyncMock()) as reload:
+        with pytest.raises(ServiceValidationError):
+            await hass.services.async_call(
+                "panasonic_hc", "reconnect", {"entry_id": entry.entry_id}, blocking=True
+            )
+        reload.assert_not_awaited()
+
+
+async def test_poll_worker_recovers_after_unexpected_backend_error():
+    from custom_components.panasonic_hc import _async_run_thermostat
+
+    thermostat = Mock()
+    thermostat.available = True
+    thermostat.async_get_status = AsyncMock(
+        side_effect=[RuntimeError("backend error"), asyncio.CancelledError()]
+    )
+    thermostat.async_disconnect = AsyncMock()
+    with patch("custom_components.panasonic_hc.asyncio.sleep", AsyncMock()) as sleep:
+        with pytest.raises(asyncio.CancelledError):
+            await _async_run_thermostat(thermostat)
+    assert thermostat.async_get_status.await_count == 2
+    sleep.assert_awaited_once_with(5)
+    assert thermostat.async_disconnect.await_count == 2

@@ -27,10 +27,13 @@
       "message": "The requested controller setting is invalid."
     },
     "command_failed": {
-      "message": "The controller did not confirm the command. Check its state and Bluetooth connection before retrying."
+      "message": "Unable to complete the controller command: {reason}."
     },
     "reconnect_failed": {
       "message": "The controller could not reconnect. Check proxy availability and pairing; Home Assistant will retry setup."
+    },
+    "entry_disabled": {
+      "message": "Enable this integration entry before reconnecting."
     }
   },
   "entity": {

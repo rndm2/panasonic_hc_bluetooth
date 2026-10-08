@@ -52,6 +52,7 @@ async def test_successful_connect(thermostat, connected):
         await thermostat.async_connect()
     assert thermostat.available
     route.assert_called_once()
+    await thermostat.async_disconnect()
 
 
 def test_invalid_packet_does_not_destroy_status(thermostat, connected):
@@ -212,3 +213,129 @@ async def test_command_deadline_with_no_status_marks_unavailable(thermostat, con
         await thermostat.async_set_temperature(25)
     assert not thermostat.available
     assert thermostat.disconnected_event.is_set()
+
+
+def test_partial_status_preserves_current_temperature(thermostat):
+    from conftest import parcel
+
+    notify(thermostat, status_packet(current=24.5))
+    notify(thermostat, parcel(bytes([65, 64, 0, 0, 120])))
+    assert thermostat.status.curtemp == 24.5
+    assert thermostat.status.settemp == 25
+
+
+def test_repeated_ambiguous_temperature_does_not_bypass_filter(thermostat):
+    notify(thermostat, status_packet(current=24.5))
+    for _ in range(3):
+        notify(thermostat, status_packet(current=-35))
+        assert thermostat.current_temperature == 24.5
+    notify(thermostat, status_packet(current=25))
+    assert thermostat.current_temperature == 25
+
+
+def test_partial_packets_do_not_renew_temperature_freshness(thermostat):
+    from conftest import parcel
+
+    clock = "custom_components.panasonic_hc.panasonic_hc.monotonic"
+    with patch(clock, return_value=100):
+        notify(thermostat, status_packet(current=24.5))
+    with patch(clock, return_value=699):
+        notify(thermostat, parcel(bytes([65, 64, 0, 0, 120])))
+        assert thermostat.current_temperature == 24.5
+    with patch(clock, return_value=700):
+        notify(thermostat, parcel(bytes([65, 64, 0, 0, 120])))
+        assert thermostat.current_temperature is None
+        assert thermostat.status.curtemp is None
+        assert thermostat._last_temperature == 24.5
+
+
+async def test_temperature_expiry_publishes_without_new_packets(thermostat):
+    thermostat._loop = asyncio.get_running_loop()
+    changed = asyncio.Event()
+    thermostat.register_update_callback(changed.set)
+    with patch("custom_components.panasonic_hc.panasonic_hc.CURRENT_TEMPERATURE_MAX_AGE", 0.01):
+        notify(thermostat, status_packet())
+        changed.clear()
+        await asyncio.wait_for(changed.wait(), timeout=1)
+        assert thermostat.current_temperature is None
+        assert thermostat.status.curtemp is None
+        assert thermostat._temperature_expiry is None
+
+
+async def test_disconnect_cancels_temperature_expiry(thermostat, connected):
+    thermostat._loop = asyncio.get_running_loop()
+    notify(thermostat, status_packet())
+    timer = thermostat._temperature_expiry
+    await thermostat.async_disconnect()
+    assert timer.cancelled()
+    assert thermostat.current_temperature is None
+
+
+async def test_combined_temperature_and_mode_validated_before_writes(thermostat, connected):
+    with pytest.raises(ValueError):
+        await thermostat.async_set_temperature(12, "heat")
+    with pytest.raises(ValueError):
+        await thermostat.async_set_temperature(22, "bogus")
+    connected.write_gatt_char.assert_not_awaited()
+
+
+async def test_combined_temperature_and_mode_confirmation(thermostat, connected):
+    from custom_components.panasonic_hc.panasonic_hc_proto import _decode
+
+    async def write(uuid, data):
+        if _decode(data)[5] == 129:
+            notify(thermostat, status_packet(mode=1, temp=25))
+
+    connected.write_gatt_char.side_effect = write
+    await thermostat.async_set_temperature(25, "heat")
+    assert thermostat.status.mode == "heat"
+    assert thermostat.status.settemp == 25
+    assert [_decode(c.args[1])[5] for c in connected.write_gatt_char.call_args_list] == [
+        65,
+        66,
+        76,
+        129,
+    ]
+
+
+async def test_busy_command_queue_is_bounded_without_writes(thermostat, connected):
+    await thermostat._lock.acquire()
+    try:
+        with patch("custom_components.panasonic_hc.panasonic_hc.COMMAND_QUEUE_TIMEOUT", 0.001):
+            with pytest.raises(PanasonicHCException, match="still in progress"):
+                await thermostat.async_set_temperature(22)
+        connected.write_gatt_char.assert_not_awaited()
+        assert thermostat._lock.locked()
+    finally:
+        thermostat._lock.release()
+    await thermostat.async_set_temperature(22)
+
+
+async def test_cancelled_queued_command_does_not_unlock_another_operation(thermostat, connected):
+    await thermostat._lock.acquire()
+    task = asyncio.create_task(thermostat.async_set_temperature(22))
+    await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert thermostat._lock.locked()
+    connected.write_gatt_char.assert_not_awaited()
+    thermostat._lock.release()
+
+
+async def test_combined_off_and_temperature(thermostat, connected):
+    from custom_components.panasonic_hc.panasonic_hc_proto import _decode
+
+    async def write(uuid, data):
+        if _decode(data)[5] == 129:
+            notify(thermostat, status_packet(power=False, temp=25))
+
+    connected.write_gatt_char.side_effect = write
+    await thermostat.async_set_temperature(25, "off")
+    assert not thermostat.status.power
+    assert thermostat.status.settemp == 25
+    assert [_decode(c.args[1])[5] for c in connected.write_gatt_char.call_args_list] == [
+        76,
+        65,
+        129,
+    ]
