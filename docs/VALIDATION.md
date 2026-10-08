@@ -28,7 +28,9 @@
   regression test were added. After deploying the confirmation fix and restarting HA,
   24.5 → 25 → 24.5 °C completed successfully with matching returned status.
 - Auto → low → auto fan and eco → none → eco preset completed successfully.
-- Automatic setup after HA restart succeeded with all adapters enabled.
+- Automatic setup after HA restart succeeded with all adapters enabled. On the last
+  HACS-required restart, initial setup and one manual attempt failed; a subsequent automatic
+  retry restored the connection. First-attempt success and seamless startup are not guaranteed.
 - Some short/ambiguous status variants report unknown current temperature; target-temperature
   confirmation is independent of that measurement. No guessed measurement is published.
 
