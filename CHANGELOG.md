@@ -4,7 +4,7 @@ All notable changes are documented here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
-## [0.1.2] - 2026-10-08
+## [0.1.2] - 2026-10-09
 
 ### Fixed
 
