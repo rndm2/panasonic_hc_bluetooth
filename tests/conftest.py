@@ -65,3 +65,8 @@ def connected(thermostat):
     thermostat._conn = conn
     notify(thermostat, status_packet())
     return conn
+
+
+@pytest.fixture(autouse=True)
+def skip_hardware_settle_delays(monkeypatch):
+    monkeypatch.setattr("custom_components.panasonic_hc.panasonic_hc.NOTIFY_SETTLE_DELAY", 0)

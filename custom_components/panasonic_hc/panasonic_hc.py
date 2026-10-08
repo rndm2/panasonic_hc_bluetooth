@@ -30,6 +30,8 @@ MAX_TEMP = 32
 BLE_CHAR_WRITE = "4d200002-eff3-4362-b090-a04cab3f1da0"
 BLE_CHAR_NOTIFY = "4d200003-eff3-4362-b090-a04cab3f1da0"
 RESPONSE_TIMEOUT = 15
+# Preserve the controller settling delays from the working upstream connection path.
+NOTIFY_SETTLE_DELAY = 0.5
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -125,7 +127,9 @@ class PanasonicHC:
                     disconnected_callback=self._disconnected,
                     ble_device_callback=self._resolve_device,
                 )
+                await asyncio.sleep(NOTIFY_SETTLE_DELAY)
                 await self._conn.start_notify(BLE_CHAR_NOTIFY, self.on_notification)
+                await asyncio.sleep(NOTIFY_SETTLE_DELAY)
                 async with self._lock:
                     await self._request_status()
         except (BleakError, TimeoutError, PanasonicHCException) as err:

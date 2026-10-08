@@ -23,6 +23,9 @@ reviewed and merged, preserving original commit attribution.
 New modules `entity.py` and `diagnostics.py` remove duplicated lifecycle code and expose
 non-identifying diagnostic state. `button.py` and `services.yaml` expose manual reconnect. Tests isolate BLE; synthetic packet tests are not physical evidence.
 
+The original 0.5-second connection/notification settling delays are retained; timeout-based
+response handling does not assume that the controller can subscribe immediately after connect.
+
 ## Remaining hardware checks
 
 - Confirm mode, fan and eco status replies and optional-field semantics on the actual controller.
