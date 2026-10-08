@@ -4,6 +4,15 @@ All notable changes are documented here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-08
+
+### Fixed
+
+- A BlueZ backend assertion during disconnect cleanup could mask the original dropped
+  connection and prevent Home Assistant from retrying setup. Cleanup is now best-effort
+  for backend exceptions while cancellation continues to propagate.
+- Added a regression test reproducing the live controller's setup failure.
+
 ## [0.1.0] - 2026-10-08
 
 ### Added
@@ -45,5 +54,6 @@ The internal domain `panasonic_hc`, climate unique ID and Bluetooth device ident
 unchanged. Keep the existing config entry during migration. The old energy entity may remain
 unavailable in the registry. No new license is applied to inherited, unlicensed upstream code.
 
-[Unreleased]: https://github.com/rndm2/panasonic_hc_bluetooth/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/rndm2/panasonic_hc_bluetooth/compare/v0.1.1...HEAD
 [0.1.0]: https://github.com/rndm2/panasonic_hc_bluetooth/releases/tag/v0.1.0
+[0.1.1]: https://github.com/rndm2/panasonic_hc_bluetooth/releases/tag/v0.1.1

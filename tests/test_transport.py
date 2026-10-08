@@ -131,3 +131,29 @@ async def test_disconnect_wakes_polling(thermostat, connected):
     thermostat.disconnected_event.clear()
     thermostat._disconnected(connected)
     assert thermostat.disconnected_event.is_set()
+
+
+async def test_backend_cleanup_assertion_preserves_retryable_setup_error(thermostat, connected):
+    connected.start_notify.side_effect = BleakError("Not connected")
+    connected.disconnect.side_effect = AssertionError("services not cleared")
+    with patch(
+        "custom_components.panasonic_hc.panasonic_hc.establish_connection",
+        AsyncMock(return_value=connected),
+    ):
+        with pytest.raises(PanasonicHCException, match="initialize") as exc:
+            await thermostat.async_connect()
+    assert isinstance(exc.value.__cause__, BleakError)
+    assert not thermostat.available
+    assert thermostat._conn is None
+
+
+async def test_cleanup_assertion_preserves_cancellation(thermostat, connected):
+    connected.start_notify.side_effect = asyncio.CancelledError
+    connected.disconnect.side_effect = AssertionError("services not cleared")
+    with patch(
+        "custom_components.panasonic_hc.panasonic_hc.establish_connection",
+        AsyncMock(return_value=connected),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await thermostat.async_connect()
+    assert thermostat._conn is None

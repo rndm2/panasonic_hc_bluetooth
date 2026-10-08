@@ -151,7 +151,9 @@ class PanasonicHC:
             try:
                 async with asyncio.timeout(10):
                     await conn.disconnect()
-            except BleakError, TimeoutError:
+            except Exception:
+                # Backend cleanup can raise AssertionError after a dropped BlueZ
+                # connection. Never replace the original setup error/cancellation.
                 _LOGGER.debug("Disconnect cleanup failed", exc_info=True)
 
     async def _write(self, command: PanasonicBLEParcel) -> None:
