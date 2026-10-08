@@ -13,9 +13,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN
 from .panasonic_hc import PanasonicHC, PanasonicHCException
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 PLATFORMS = [Platform.CLIMATE, Platform.BUTTON]
 _LOGGER = logging.getLogger(__name__)
