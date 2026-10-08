@@ -3,7 +3,7 @@
 ## Automated
 
 - Python 3.14.6 / Home Assistant 2026.10.0.
-- 69 passing tests covering packet framing, malformed inputs, MAC validation, original wire
+- 70 passing tests covering packet framing, malformed inputs, MAC validation, original wire
   commands, optional status fields, cleanup/cancellation, unload, stable identity, reconnect
   service behavior, late notifications and diagnostics before successful setup.
 - Ruff, formatting, mypy and `git diff --check` pass.

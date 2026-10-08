@@ -247,6 +247,12 @@ class PanasonicHC:
                             return
                         await asyncio.sleep(COMMAND_CONFIRM_INTERVAL)
             except TimeoutError as err:
+                if not self._status_event.is_set():
+                    # The outer deadline can expire before _request_status's own
+                    # timeout. A silent controller still needs recovery.
+                    self.ready = False
+                    self.disconnected_event.set()
+                    self._publish()
                 raise PanasonicHCException("Controller did not confirm requested setting") from err
 
     async def async_set_power(self, state: bool) -> None:

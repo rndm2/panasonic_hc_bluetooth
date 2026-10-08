@@ -203,3 +203,12 @@ async def test_delayed_command_confirmation_does_not_resend_command(thermostat, 
     await thermostat.async_set_temperature(25)
     assert thermostat.status.settemp == 25
     assert writes == [76, 129, 129]
+
+
+async def test_command_deadline_with_no_status_marks_unavailable(thermostat, connected):
+    connected.write_gatt_char.side_effect = None
+    thermostat.disconnected_event.clear()
+    with pytest.raises(PanasonicHCException, match="confirm"):
+        await thermostat.async_set_temperature(25)
+    assert not thermostat.available
+    assert thermostat.disconnected_event.is_set()
