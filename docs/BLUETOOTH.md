@@ -1,4 +1,4 @@
-# Bluetooth selection and pairing investigation — 0.2.0
+# Bluetooth selection and pairing investigation — 0.2.1
 
 Inspected the installed Home Assistant 2026.10.0 stack, `habluetooth` wrapper/manager, `bleak-retry-connector` 4.7.1, `bleak-esphome` 4.0.0 and the deployed proxy's BLE configuration.
 
@@ -8,9 +8,15 @@ Inspected the installed Home Assistant 2026.10.0 stack, `habluetooth` wrapper/ma
 
 The HA wrapper records connection success before the integration subscribes to Panasonic notifications. Thus an adapter that connects but fails at `start_notify()` can remain preferred; post-connect protocol readiness is not part of that connection-success score. Local BlueZ `NotConnected` failures at this stage were observed in the deployment environment, while connection through the previously bonded ESPHome proxy succeeded.
 
-The installed stack exposes no supported per-entry preferred-source argument. The [HA scanner APIs](https://developers.home-assistant.io/docs/core/bluetooth/api/) allow read-only inspection and explicitly prohibit changing scanner state. This integration therefore does not patch HA internals or disable other integrations to force a route. Diagnostics report candidate paths without identifying data; HA Bluetooth logs report the actual chosen path.
+There is no public preferred-source constructor parameter in the inspected wrapper. That is not the same as there being no implementation path: the earlier conclusion that the integration could not recover without adapter isolation was too strong.
 
-Temporarily disabling the local adapter can isolate a proxy test, but affects other devices and is not an integration-level fix. The local adapter was previously restored after each such authorized test.
+Version 0.2.1 subclasses `HaBleakClientWrapper` only for Panasonic. Two isolated protected selection hooks prefer the last status-confirmed source and skip sources that failed the current handshake. The inherited HA connect/disconnect code still chooses backend implementations, allocates local slots, tracks remote connections and handles scanner removal. It changes no shared scanner properties or route scores and does not disable anything. Read-only route enumeration uses the manager already passed to HA's selection hook.
+
+After GATT, notify or status failure, the controller closes its own failed client and tries another source. No HVAC command is replayed during route search. Only a complete status handshake updates the preference. Config flow persists it before entry setup, avoiding immediately switching back to the bad path after validation disconnects. Existing entries learn a working preference during successful setup; failure exclusions reset for the next connection attempt.
+
+The compatibility adapter relies on protected HA Bluetooth methods and is regression-tested against the installed HA 2026.10.0 wrapper. Future HA updates need to retain or adapt these hooks. This tradeoff is explicit; it is not a claim that a new public HA pinning API exists.
+
+Earlier temporary adapter-isolation tests were diagnostic workarounds. The owner has revoked permission to disable adapters/proxies, and the 0.2.1 fix and validation do not use them.
 
 ## Discovery versus pairing
 

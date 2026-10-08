@@ -19,7 +19,7 @@ Select the controller from nearby Bluetooth devices or enter its colon-separated
 
 ### Migration
 
-The internal domain and directory remain **`panasonic_hc`**. Device identity, climate unique ID, reconnect-button unique ID and existing history are retained. Version 0.2.0 does not migrate stored configuration.
+The internal domain and directory remain **`panasonic_hc`**. Device identity, climate unique ID, reconnect-button unique ID and existing history are retained. Version 0.2.1 adds only the last working Bluetooth source to entry data; existing identities remain unchanged.
 
 When switching from the original repository, replace its HACS installation with this repository before restarting. Keep the existing integration entry and entities in HA. Two integrations using this domain cannot be installed simultaneously. To roll back, reinstall a previous release and restart.
 
@@ -39,9 +39,13 @@ There is **no energy accounting**: no Daily Energy sensor, consumption polling, 
 
 Press **Reconnect Bluetooth** on the device, or call the `panasonic_hc.reconnect` action and select its integration entry. The action works during setup retries even when the button is unavailable. It reloads only that entry, cancels its worker, closes the old session and requires fresh controller status. It does not restart proxies, change AC settings or remove bonds. Disabled entries and simultaneous reconnect requests are rejected explicitly.
 
-HA selects the connection path using signal strength, connection-failure history and free slots. Passing a device seen by one proxy does **not** pin that proxy. A stronger adapter without a working Panasonic bond can therefore win over an already-paired proxy. Passive scanning is not a reliable way to exclude an adapter from connection selection.
+HA normally selects the connection path using signal strength, failure history and free slots. A GATT connection can succeed while the Panasonic notification/status handshake fails, so HA's normal scoring alone can repeatedly choose a non-working adapter.
 
-There is no supported per-entry adapter pin in the HA Bluetooth API used here. This integration does not bypass HA's connection manager or mutate shared scanner state. A backend may count a successful GATT connection before notification subscription fails; such failures can recur on the same path. Pairing each intended adapter, making the working proxy reachable and checking its available slots remain necessary. See [Bluetooth investigation](docs/BLUETOOTH.md).
+From **0.2.1**, the Panasonic client tries another available route when connection, notification subscription or the first valid status fails. Failed sources are excluded only for that controller's current connection attempt. Other Bluetooth devices and adapters remain enabled and unchanged. Each route has bounded connection time and the readiness search has a 90-second deadline, followed by bounded cleanup; exhausted routes return a setup/flow error.
+
+A route is remembered only after a valid status reply. The setup flow saves that source in the integration entry; subsequent setup/reconnect prefers it and falls back if it is missing, busy or fails. This preserves strict validation in the UI without treating one failed adapter as proof that the controller is unreachable.
+
+This uses a small, isolated subclass of HA's Bluetooth client and its protected route-selection hooks, tested against HA 2026.10.0. It retains HA's slot accounting and connection lifecycle; it does not monkeypatch shared classes, alter scanner scores, disable adapters or restart proxies. These protected hooks are a compatibility dependency to review on HA upgrades. See [Bluetooth investigation](docs/BLUETOOTH.md).
 
 ## Pairing
 
@@ -73,7 +77,7 @@ mypy
 pytest -q --cov=custom_components.panasonic_hc --cov-report=term-missing
 ```
 
-Tests use synthetic frames and mocked BLE against real HA classes; they do not operate hardware. See [changelog](CHANGELOG.md), [0.2.0 review](docs/REVIEW-0.2.0.md) and [validation](docs/VALIDATION.md) for evidence and remaining boundaries.
+Tests use synthetic frames and mocked BLE against real HA classes; they do not operate hardware. See [changelog](CHANGELOG.md), [0.2.1 review](docs/REVIEW-0.2.1.md) and [validation](docs/VALIDATION.md) for evidence and remaining boundaries.
 
 ## Attribution and licensing
 

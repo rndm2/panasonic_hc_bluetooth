@@ -79,10 +79,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: PanasonicHCConfigEntry) 
     if device is None:
         raise ConfigEntryNotReady("Controller has no connectable Bluetooth route")
     thermostat = PanasonicHC(device, address, get_device)
+    thermostat.transport.routes.preferred = entry.data.get("preferred_source")
     try:
         await thermostat.async_connect()
     except PanasonicHCException as err:
         raise ConfigEntryNotReady(str(err)) from err
+    if (source := thermostat.transport.routes.preferred) and source != entry.data.get(
+        "preferred_source"
+    ):
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, "preferred_source": source}
+        )
     entry.runtime_data = RuntimeData(thermostat)
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

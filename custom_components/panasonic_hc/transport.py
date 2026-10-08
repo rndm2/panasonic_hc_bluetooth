@@ -5,7 +5,9 @@ import logging
 from collections.abc import Callable
 
 from bleak.backends.device import BLEDevice
-from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
+from bleak_retry_connector import establish_connection
+
+from .connection import PanasonicBleakClient, RoutePolicy
 
 BLE_CHAR_WRITE = "4d200002-eff3-4362-b090-a04cab3f1da0"
 BLE_CHAR_NOTIFY = "4d200003-eff3-4362-b090-a04cab3f1da0"
@@ -25,16 +27,17 @@ class BLETransport:
         self._resolve = resolve
         self._received = received
         self._lost = lost
-        self.client: BleakClientWithServiceCache | None = None
+        self.client: PanasonicBleakClient | None = None
         self.stage = "disconnected"
         self.connect_attempts = 0
         self.accept_notifications = False
+        self.routes = RoutePolicy()
 
     @property
     def connected(self) -> bool:
         return self.client is not None and self.client.is_connected
 
-    def _disconnected(self, client: BleakClientWithServiceCache) -> None:
+    def _disconnected(self, client: PanasonicBleakClient) -> None:
         if client is self.client:
             self.accept_notifications = False
             self.stage = "disconnected"
@@ -44,14 +47,17 @@ class BLETransport:
         await self.disconnect()
         self.connect_attempts += 1
         self.stage = "connecting"
+        self.routes.selected = None
         self.device = self._resolve()
         try:
-            async with asyncio.timeout(45):
+            async with asyncio.timeout(25):
                 self.client = await establish_connection(
-                    BleakClientWithServiceCache,
+                    PanasonicBleakClient,
                     self.device,
                     self.device.name or self.device.address,
                     disconnected_callback=self._disconnected,
+                    max_attempts=1,
+                    route_policy=self.routes,
                 )
                 client = self.client
 
