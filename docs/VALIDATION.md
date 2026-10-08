@@ -12,6 +12,9 @@
 - Synthetic tests verify ten-minute freshness expiry, no timer leaks, repeated rejected
   readings, queue timeout/cancellation, combined off/mode actions and disabled-entry reconnect.
 - Hardware test does not prove every packet variant, all mode transitions or proxy failover.
+- Follow-up observation: after accepting a restored 24.5 °C target, both this integration and
+  an independent ESPHome climate later reported 25 °C. The cause was not isolated; the short
+  event test proves the flicker fix, not long-term target persistence or absence of other control.
 
 ## Historical 0.1.1 validation
 
