@@ -44,6 +44,10 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         entry = hass.config_entries.async_get_entry(entry_id)
         if entry is None or entry.domain != DOMAIN:
             raise ServiceValidationError("Select a Panasonic H&C Bluetooth config entry")
+        if entry.disabled_by is not None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="entry_disabled"
+            )
         lock = locks.setdefault(entry_id, asyncio.Lock())
         if lock.locked():
             raise HomeAssistantError("A reconnect is already in progress")
@@ -112,9 +116,16 @@ async def _async_run_thermostat(thermostat: PanasonicHC) -> None:
                     await thermostat.async_disconnect()
                     await thermostat.async_connect()
                 await thermostat.async_get_status()
-            except PanasonicHCException as err:
+            except Exception as err:
+                # Supervise the long-lived worker: an unexpected backend exception
+                # must not leave the entry loaded with a permanently dead poller.
+                # Cancellation is a BaseException and still propagates normally.
                 if not unavailable_logged:
-                    _LOGGER.warning("Panasonic controller unavailable: %s", err)
+                    _LOGGER.warning(
+                        "Panasonic controller unavailable: %s",
+                        err,
+                        exc_info=not isinstance(err, PanasonicHCException),
+                    )
                     unavailable_logged = True
                 await thermostat.async_disconnect()
                 await asyncio.sleep(delay)

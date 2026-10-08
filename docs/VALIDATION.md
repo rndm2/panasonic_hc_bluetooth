@@ -1,4 +1,19 @@
-# Validation — 0.1.1
+# Validation
+
+## 0.1.2 — temperature state and action review
+
+- 83 automated tests pass; Ruff, formatting, mypy, HACS and hassfest pass.
+- On the real CZ-RTC6BLW, subscribed to HA state_changed events before changing the target.
+- Combined target/mode command: 24.5 → 25 °C with cool; then restored target to 24.5 °C.
+- Both actions succeeded; five event/snapshot samples contained zero unknown current-temperature
+  readings. Actual current measurement updated from 24.5 to 24.0 °C without disappearing.
+- After startup, the existing BlueZ route failure recurred. Temporarily disabling the local
+  adapter allowed proxy reconnect; the local adapter was restored before the temperature test.
+- Synthetic tests verify ten-minute freshness expiry, no timer leaks, repeated rejected
+  readings, queue timeout/cancellation, combined off/mode actions and disabled-entry reconnect.
+- Hardware test does not prove every packet variant, all mode transitions or proxy failover.
+
+## Historical 0.1.1 validation
 
 ## Automated
 

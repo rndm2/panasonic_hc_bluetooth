@@ -4,6 +4,7 @@ from collections.abc import Awaitable
 from typing import Any
 
 from homeassistant.components.climate import (
+    ATTR_HVAC_MODE,
     FAN_AUTO,
     FAN_HIGH,
     FAN_LOW,
@@ -63,7 +64,7 @@ class PanasonicHCClimate(PanasonicEntity, ClimateEntity):
 
     @property
     def current_temperature(self) -> float | None:
-        return self._thermostat.status.curtemp if self._thermostat.status else None
+        return self._thermostat.current_temperature
 
     @property
     def target_temperature(self) -> float | None:
@@ -89,12 +90,16 @@ class PanasonicHCClimate(PanasonicEntity, ClimateEntity):
             ) from err
         except PanasonicHCException as err:
             raise HomeAssistantError(
-                translation_domain=DOMAIN, translation_key="command_failed"
+                translation_domain=DOMAIN,
+                translation_key="command_failed",
+                translation_placeholders={"reason": str(err)},
             ) from err
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         if (temperature := kwargs.get(ATTR_TEMPERATURE)) is not None:
-            await self._command(self._thermostat.async_set_temperature(temperature))
+            await self._command(
+                self._thermostat.async_set_temperature(temperature, kwargs.get(ATTR_HVAC_MODE))
+            )
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         if hvac_mode == HVACMode.OFF:

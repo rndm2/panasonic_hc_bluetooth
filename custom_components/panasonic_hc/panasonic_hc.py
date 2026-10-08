@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, replace
+from time import monotonic
 
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
@@ -29,7 +31,9 @@ MIN_TEMP = 16
 MAX_TEMP = 32
 BLE_CHAR_WRITE = "4d200002-eff3-4362-b090-a04cab3f1da0"
 BLE_CHAR_NOTIFY = "4d200003-eff3-4362-b090-a04cab3f1da0"
+CURRENT_TEMPERATURE_MAX_AGE = 600
 RESPONSE_TIMEOUT = 15
+COMMAND_QUEUE_TIMEOUT = 5
 COMMAND_CONFIRM_TIMEOUT = 15
 COMMAND_CONFIRM_INTERVAL = 0.5
 # Preserve the controller settling delays from the working upstream connection path.
@@ -73,6 +77,46 @@ class PanasonicHC:
         self.status: Status | None = None
         self.ready = False
         self.parse_errors = 0
+        self._last_temperature: float | None = None
+        self._temperature_updated_at: float | None = None
+        self._temperature_expiry: asyncio.TimerHandle | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    @property
+    def current_temperature(self) -> float | None:
+        """Return the last valid measurement only while it is fresh."""
+        if (
+            self._temperature_updated_at is None
+            or monotonic() - self._temperature_updated_at >= CURRENT_TEMPERATURE_MAX_AGE
+        ):
+            return None
+        return self._last_temperature
+
+    def _expire_temperature(self) -> None:
+        self._temperature_expiry = None
+        self._temperature_updated_at = None
+        if self.status is not None:
+            self.status = replace(self.status, curtemp=None)
+            self._publish()
+
+    def _merge_temperature(self, value: float | None) -> float | None:
+        # A partial/ambiguous packet is not evidence that the measurement changed.
+        # Keep a separate validation anchor: rejecting one packet must not let the
+        # next identical bad value bypass the jump check.
+        if (
+            value is not None
+            and -40 <= value <= 70
+            and (self._last_temperature is None or abs(value - self._last_temperature) <= 20)
+        ):
+            self._last_temperature = value
+            self._temperature_updated_at = monotonic()
+            if self._temperature_expiry is not None:
+                self._temperature_expiry.cancel()
+            if self._loop is not None:
+                self._temperature_expiry = self._loop.call_later(
+                    CURRENT_TEMPERATURE_MAX_AGE, self._expire_temperature
+                )
+        return self.current_temperature
 
     @property
     def is_connected(self) -> bool:
@@ -115,6 +159,7 @@ class PanasonicHC:
 
     async def async_connect(self) -> None:
         """Refresh the adapter reference, connect and require a valid status."""
+        self._loop = asyncio.get_running_loop()
         try:
             self.device = self._resolve_device()
             async with asyncio.timeout(45):
@@ -147,6 +192,13 @@ class PanasonicHC:
     async def async_disconnect(self) -> None:
         """Idempotent cleanup, also safe after a failed initial connection."""
         conn, self._conn = self._conn, None
+        if self._temperature_expiry is not None:
+            self._temperature_expiry.cancel()
+            self._temperature_expiry = None
+        self._last_temperature = None
+        self._temperature_updated_at = None
+        if self.status is not None:
+            self.status = replace(self.status, curtemp=None)
         self.ready = False
         self.disconnected_event.set()
         self._status_event.set()
@@ -201,18 +253,7 @@ class PanasonicHC:
         for packet in parcel:
             if isinstance(packet, PanasonicBLEParcel.PanasonicBLEPacketStatus):
                 previous = self.status
-                current = packet.curtemp
-                # The original protocol has ambiguous temperature variants. Publish
-                # unknown rather than freezing a stale reading indefinitely.
-                if current is not None and (
-                    not -40 <= current <= 70
-                    or (
-                        previous is not None
-                        and previous.curtemp is not None
-                        and abs(current - previous.curtemp) > 20
-                    )
-                ):
-                    current = None
+                current = self._merge_temperature(packet.curtemp)
                 self.status = Status(
                     bool(packet.power),
                     packet.mode.name,
@@ -229,10 +270,22 @@ class PanasonicHC:
         if updated:
             self._publish()
 
+    @asynccontextmanager
+    async def _command_slot(self) -> AsyncIterator[None]:
+        try:
+            async with asyncio.timeout(COMMAND_QUEUE_TIMEOUT):
+                await self._lock.acquire()
+        except TimeoutError as err:
+            raise PanasonicHCException("Another controller operation is still in progress") from err
+        try:
+            yield
+        finally:
+            self._lock.release()
+
     async def _set(
         self, commands: list[PanasonicBLEParcel], expected: Callable[[Status], bool]
     ) -> None:
-        async with self._lock:
+        async with self._command_slot():
             if not self.available:
                 raise PanasonicHCException("Controller is not ready")
             for command in commands:
@@ -258,8 +311,24 @@ class PanasonicHC:
     async def async_set_power(self, state: bool) -> None:
         await self._set([PanasonicBLEPower(int(state))], lambda s: s.power == state)
 
-    async def async_set_temperature(self, temp: float) -> None:
-        await self._set([PanasonicBLETemp(temp)], lambda s: s.settemp == temp)
+    async def async_set_temperature(self, temp: float, hvac_mode: str | None = None) -> None:
+        # Validate the entire combined HA request before sending any command.
+        temperature = PanasonicBLETemp(temp)
+        if hvac_mode is None:
+            await self._set([temperature], lambda s: s.settemp == temp)
+        elif hvac_mode == "off":
+            await self._set(
+                [temperature, PanasonicBLEPower(0)], lambda s: s.settemp == temp and not s.power
+            )
+        else:
+            try:
+                mode = MODE[hvac_mode].value
+            except KeyError as err:
+                raise ValueError("Invalid HVAC mode") from err
+            await self._set(
+                [PanasonicBLEPower(1), PanasonicBLEMode(mode), temperature],
+                lambda s: s.settemp == temp and s.power and s.mode == hvac_mode,
+            )
 
     async def async_set_mode(self, mode: str) -> None:
         try:

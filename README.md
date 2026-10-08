@@ -44,7 +44,14 @@ fan speed and eco preset. These temperature limits are inherited and need model-
 hardware verification. Commands are serialized, followed by a status request, and raise
 an HA action error when the controller does not confirm the requested value within 15 seconds.
 Status is polled during confirmation because the first reply can still contain the old setting.
-The command itself is sent only once. A failed
+The command itself is sent only once. Waiting behind another operation is limited to five
+seconds; if the queue is busy the action fails explicitly. Combined temperature/HVAC-mode
+actions validate all inputs before sending commands and confirm both returned settings.
+
+Current temperature is a separately timed measurement. Partial or implausible replies retain
+the last valid reading; they do not refresh its age. After ten minutes without a valid update,
+it becomes unknown. Disconnecting clears it. This avoids flicker without retaining stale data
+indefinitely. A failed
 multi-command mode change may have partially affected the controller: check its current state.
 
 Climate is polled every 60 seconds while on and every 300 seconds while off. Valid BLE
