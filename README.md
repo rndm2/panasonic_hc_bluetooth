@@ -1,39 +1,116 @@
-# Panasonic H&C Home Assistant Integration
+# Panasonic H&C Bluetooth
 
-This integration supports Bluetooth enabled wired remote controllers
-for Panasonic reverse cycle air conditioning units supported by the
-"Panasonic H&C Control" Andriod and iOS apps.
+Local Bluetooth control of Panasonic H&C wired air-conditioning controllers in Home Assistant.
 
-It is currently being developed and tested with the CZ-RTC6BLW controller.
+Maintained by [Kostiantyn Marianovskyi (@rndm2)](https://github.com/rndm2).
+Originally created by [David Collett (@david-collett)](https://github.com/david-collett).
+Based on [david-collett/panasonic_hc](https://github.com/david-collett/panasonic_hc),
+commit `a8859172df5238573b40f45e8d045165a568e7a1`, with the maintainer's earlier
+`bugfix/index-out-of-range-fix` changes preserved in Git history.
 
-It uses local BLE control and does not require any cloud connection or
-registration.
+## Compatibility
 
-The integration provides a Climate entity for basic control
-(mode, target temp, fan speed, powersave mode).
+- Home Assistant **2026.10.0 or newer**; tested with 2026.10.0 / Python 3.14.
+- Verified controller model from the original integration: **CZ-RTC6BLW**.
+  Other `CZ-RTC6*` advertisements may be discovered, but model compatibility is unverified.
+- A connectable local Bluetooth adapter or ESPHome active Bluetooth proxy, already paired
+  with the controller. No Panasonic cloud account is needed.
+- Domain and installation directory remain **`panasonic_hc`** for migration compatibility.
+- Entity IDs, unique IDs and Bluetooth device identity are preserved.
 
-It also exposes an energy sensor that can be added to energy dashboard.
-Note that the energy sensor only receives new data hourly for the
-previous hour so it is not entirely accurate in energy dashboard.
+## Install with HACS
 
-## Installation
+1. Add `https://github.com/rndm2/panasonic_hc_bluetooth` to HACS custom repositories,
+   category **Integration**.
+2. Download **Panasonic H&C Bluetooth** and restart Home Assistant.
+3. Accept discovery or add Panasonic H&C Bluetooth and enter a colon-separated MAC address.
+   Setup requires a valid status reply; pair the controller first.
 
-The simplest method is using 'HACS':
+### Migrate from david-collett/panasonic_hc
 
-- Go to HACS / Integrations
-- Click the 3 dots in the top right
-- Select "Custom repositories"
-- Add the repository URL
-- Select category Integration
-- Click ADD
-- Now from HACS / Integrations you can find Panasonic H&C and click Download
-- Restart Home Assistant
+Remove the old repository's
+installation in **HACS**, then install this repository before restarting HA. Keep the
+existing integration in **Settings → Devices & services**. Do not delete its config entry,
+entities, device, statistics or Bluetooth bond. Both repositories use the same domain
+and cannot be installed concurrently. Verify the new version and availability after restart.
 
-Home assistant should now detect compatible Panasonic controllers.
+Rollback: reinstall the previous integration code/version and restart HA.
+This release does not migrate stored configuration or rewrite entity identifiers.
 
-## Notes
+## Behavior
 
-The controller requires pairing/bonding. Instructions depend upon your bluetooth setup.
+Climate supports power, HVAC mode, target temperature (16–32 °C in 0.5 °C steps),
+fan speed and eco preset. These temperature limits are inherited and need model-specific
+hardware verification. Commands are serialized, followed by a status request, and raise
+an HA action error when the controller does not confirm the requested value. A failed
+multi-command mode change may have partially affected the controller: check its current state.
+
+Climate is polled every 60 seconds while on and every 300 seconds while off. Valid BLE
+notifications also update state. Connection failures retry with a 5–300 second backoff.
+No heating/cooling action is inferred from temperature alone.
+
+## Reconnect with Bluetooth proxies
+
+Press **Reconnect Bluetooth** on the Panasonic device, or call **Panasonic H&C Bluetooth:
+Reconnect Bluetooth** in Developer Tools → Actions and select the integration entry.
+The action is also usable when initial setup is retrying and the button is unavailable.
+
+This reloads only the selected Panasonic entry: cancels polling, closes the old BLE connection,
+asks HA for a currently connectable route, subscribes to notifications and waits for valid status.
+The route is refreshed for connection retries too. HA/its Bluetooth backend selects the adapter
+or active ESPHome proxy; this integration does not pin a proxy or restart your ESP32.
+Concurrent reconnect requests for the same entry are rejected. No pairing data or HVAC settings
+are reset. Each proxy still needs its own valid bond to the Panasonic controller.
+
+A controller that stops advertising or a proxy with no free active connection slots cannot be
+fixed just by reloading. Check proxy availability and pairing if the action reports failure;
+HA will continue setup retries.
+
+## Energy removal in 0.1.0
+
+Energy tracking is removed: no Daily Energy entity, consumption parser, polling or snapshots.
+The old sensor, if registered, may remain unavailable in the entity registry; stored Recorder
+history/statistics are not deleted. Climate identity and history are unaffected.
+
+## Troubleshooting and diagnostics
+
+Download diagnostics from the integration page. Diagnostics report connection readiness,
+packet-error count and status readiness, without MAC addresses or raw packets.
+Enable debug logging for `custom_components.panasonic_hc` when investigating malformed frames.
+If setup retries, check pairing, proxy active connections, controller range and whether another
+client is occupying the BLE connection. Unknown packet variants are ignored rather than guessed.
+
+## Development
+
+```sh
+python3.14 -m venv .venv
+. .venv/bin/activate
+pip install '.[test]'
+ruff check .
+ruff format --check .
+mypy
+pytest -q --cov=custom_components.panasonic_hc
+```
+
+Tests use synthetic packets and mocked BLE connections against real HA classes; they never
+send commands to a physical controller. See [CHANGELOG.md](CHANGELOG.md) and
+[docs/AUDIT.md](docs/AUDIT.md) for fixes and remaining hardware checks.
+
+## Attribution and licensing
+
+The upstream snapshot contains **no license grant**. Original authorship and Git history
+are retained. This repository does not claim ownership of upstream work and does not
+apply a new license to it. Attribution is not a substitute for permission; clarify the
+upstream license before assuming broad redistribution or relicensing rights.
+HACS CI explicitly excludes the license check for this custom repository; this is not
+a claim of eligibility for inclusion in the default HACS catalog.
+
+## Pairing
+
+The following instructions are inherited from upstream. The ESPHome example was tested
+upstream with 2025.6.1; it has not been revalidated against every later ESPHome release.
+The mobile automation example is Android-only. For iOS, use HA Developer Tools to listen
+for the pairing event and invoke the confirmation action manually, confirming on the controller too.
 
 ### Local Bluetooth Adapter
 

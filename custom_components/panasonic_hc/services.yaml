@@ -1,0 +1,7 @@
+reconnect:
+  fields:
+    entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: panasonic_hc

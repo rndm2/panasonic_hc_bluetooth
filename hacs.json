@@ -1,4 +1,5 @@
 {
-    "name": "Panasonic H&C",
-    "render_readme": true
+  "name": "Panasonic H&C Bluetooth",
+  "homeassistant": "2026.10.0",
+  "render_readme": true
 }
