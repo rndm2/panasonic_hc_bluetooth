@@ -262,3 +262,15 @@ async def test_reconnect_rejects_overlapping_requests(hass):
         finally:
             finish.set()
             await first
+
+
+async def test_diagnostics_before_successful_setup():
+    from custom_components.panasonic_hc.diagnostics import async_get_config_entry_diagnostics
+
+    result = await async_get_config_entry_diagnostics(Mock(), SimpleNamespace())
+    assert result == {
+        "connected": False,
+        "available": False,
+        "has_status": False,
+        "invalid_packets": 0,
+    }

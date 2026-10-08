@@ -8,7 +8,10 @@ from . import PanasonicHCConfigEntry
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: PanasonicHCConfigEntry
 ) -> dict:
-    device = entry.runtime_data.thermostat
+    runtime = getattr(entry, "runtime_data", None)
+    if runtime is None:
+        return {"connected": False, "available": False, "has_status": False, "invalid_packets": 0}
+    device = runtime.thermostat
     return {
         "connected": device.is_connected,
         "available": device.available,

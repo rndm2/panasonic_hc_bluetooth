@@ -30,6 +30,8 @@ MAX_TEMP = 32
 BLE_CHAR_WRITE = "4d200002-eff3-4362-b090-a04cab3f1da0"
 BLE_CHAR_NOTIFY = "4d200003-eff3-4362-b090-a04cab3f1da0"
 RESPONSE_TIMEOUT = 15
+COMMAND_CONFIRM_TIMEOUT = 15
+COMMAND_CONFIRM_INTERVAL = 0.5
 # Preserve the controller settling delays from the working upstream connection path.
 NOTIFY_SETTLE_DELAY = 0.5
 _LOGGER = logging.getLogger(__name__)
@@ -113,29 +115,31 @@ class PanasonicHC:
 
     async def async_connect(self) -> None:
         """Refresh the adapter reference, connect and require a valid status."""
-        if self._device_callback is not None:
-            device = self._device_callback()
-            if device is None:
-                raise PanasonicHCException("No connectable Bluetooth route")
-            self.device = device
         try:
+            self.device = self._resolve_device()
             async with asyncio.timeout(45):
                 self._conn = await establish_connection(
                     BleakClientWithServiceCache,
                     self.device,
                     self.device.name or self.device.address,
                     disconnected_callback=self._disconnected,
-                    ble_device_callback=self._resolve_device,
                 )
                 await asyncio.sleep(NOTIFY_SETTLE_DELAY)
-                await self._conn.start_notify(BLE_CHAR_NOTIFY, self.on_notification)
+                connection = self._conn
+
+                def notification(handle: BleakGATTCharacteristic, data: bytearray) -> None:
+                    # A backend may deliver queued notifications after disconnect.
+                    if self._conn is connection:
+                        self.on_notification(handle, data)
+
+                await connection.start_notify(BLE_CHAR_NOTIFY, notification)
                 await asyncio.sleep(NOTIFY_SETTLE_DELAY)
                 async with self._lock:
                     await self._request_status()
         except (BleakError, TimeoutError, PanasonicHCException) as err:
             await self.async_disconnect()
-            raise PanasonicHCException("Could not initialize controller") from err
-        except asyncio.CancelledError:
+            raise PanasonicHCException(f"Could not initialize controller: {err}") from err
+        except BaseException:
             await self.async_disconnect()
             raise
         self.disconnected_event.clear()
@@ -151,7 +155,9 @@ class PanasonicHC:
             try:
                 async with asyncio.timeout(10):
                     await conn.disconnect()
-            except BleakError, TimeoutError:
+            except Exception:
+                # Backend cleanup can raise AssertionError after a dropped BlueZ
+                # connection. Never replace the original setup error/cancellation.
                 _LOGGER.debug("Disconnect cleanup failed", exc_info=True)
 
     async def _write(self, command: PanasonicBLEParcel) -> None:
@@ -231,9 +237,23 @@ class PanasonicHC:
                 raise PanasonicHCException("Controller is not ready")
             for command in commands:
                 await self._write(command)
-            await self._request_status()
-            if self.status is None or not expected(self.status):
-                raise PanasonicHCException("Controller did not confirm requested setting")
+            # The first reply can still describe the state before the write.
+            # Do not resend the command: only poll until the setting is confirmed.
+            try:
+                async with asyncio.timeout(COMMAND_CONFIRM_TIMEOUT):
+                    while True:
+                        await self._request_status()
+                        if self.status is not None and expected(self.status):
+                            return
+                        await asyncio.sleep(COMMAND_CONFIRM_INTERVAL)
+            except TimeoutError as err:
+                if not self._status_event.is_set():
+                    # The outer deadline can expire before _request_status's own
+                    # timeout. A silent controller still needs recovery.
+                    self.ready = False
+                    self.disconnected_event.set()
+                    self._publish()
+                raise PanasonicHCException("Controller did not confirm requested setting") from err
 
     async def async_set_power(self, state: bool) -> None:
         await self._set([PanasonicBLEPower(int(state))], lambda s: s.power == state)

@@ -4,6 +4,22 @@ All notable changes are documented here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-08
+
+### Fixed
+
+- Wait up to 15 seconds for command confirmation when the first status reply still contains
+  the previous setting. Only status requests are repeated, never the HVAC command.
+- A BlueZ backend assertion during disconnect cleanup could mask the original dropped
+  connection and prevent Home Assistant from retrying setup. Cleanup is now best-effort
+  for backend exceptions while cancellation continues to propagate.
+- Ignore queued notifications from a previous connection after disconnect.
+- Clean up connections on unexpected setup exceptions without masking the exception.
+- Allow diagnostics before successful entry setup and include the cause of connection errors.
+- Remove the unused retry-connector callback argument and clarify that HA chooses the route;
+  refreshing a device lookup does not force a different proxy.
+- Add regression tests for cleanup, stale notifications and unavailable diagnostics.
+
 ## [0.1.0] - 2026-10-08
 
 ### Added
@@ -45,5 +61,6 @@ The internal domain `panasonic_hc`, climate unique ID and Bluetooth device ident
 unchanged. Keep the existing config entry during migration. The old energy entity may remain
 unavailable in the registry. No new license is applied to inherited, unlicensed upstream code.
 
-[Unreleased]: https://github.com/rndm2/panasonic_hc_bluetooth/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/rndm2/panasonic_hc_bluetooth/compare/v0.1.1...HEAD
 [0.1.0]: https://github.com/rndm2/panasonic_hc_bluetooth/releases/tag/v0.1.0
+[0.1.1]: https://github.com/rndm2/panasonic_hc_bluetooth/releases/tag/v0.1.1

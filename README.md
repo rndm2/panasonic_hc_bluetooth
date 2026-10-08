@@ -42,7 +42,9 @@ This release does not migrate stored configuration or rewrite entity identifiers
 Climate supports power, HVAC mode, target temperature (16–32 °C in 0.5 °C steps),
 fan speed and eco preset. These temperature limits are inherited and need model-specific
 hardware verification. Commands are serialized, followed by a status request, and raise
-an HA action error when the controller does not confirm the requested value. A failed
+an HA action error when the controller does not confirm the requested value within 15 seconds.
+Status is polled during confirmation because the first reply can still contain the old setting.
+The command itself is sent only once. A failed
 multi-command mode change may have partially affected the controller: check its current state.
 
 Climate is polled every 60 seconds while on and every 300 seconds while off. Valid BLE
@@ -57,14 +59,16 @@ The action is also usable when initial setup is retrying and the button is unava
 
 This reloads only the selected Panasonic entry: cancels polling, closes the old BLE connection,
 asks HA for a currently connectable route, subscribes to notifications and waits for valid status.
-The route is refreshed for connection retries too. HA/its Bluetooth backend selects the adapter
-or active ESPHome proxy; this integration does not pin a proxy or restart your ESP32.
+The device lookup is refreshed before each integration connection attempt. HA/its Bluetooth
+backend selects the adapter or active ESPHome proxy; this integration does not pin a proxy,
+force failover, or restart your ESP32. A stronger unpaired adapter can still be selected.
 Concurrent reconnect requests for the same entry are rejected. No pairing data or HVAC settings
 are reset. Each proxy still needs its own valid bond to the Panasonic controller.
 
 A controller that stops advertising or a proxy with no free active connection slots cannot be
 fixed just by reloading. Check proxy availability and pairing if the action reports failure;
-HA will continue setup retries.
+HA will continue setup retries. A successful reconnect means a valid status was received;
+it does not prove that every HVAC command or alternate proxy works.
 
 ## Energy removal in 0.1.0
 

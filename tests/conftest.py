@@ -70,3 +70,7 @@ def connected(thermostat):
 @pytest.fixture(autouse=True)
 def skip_hardware_settle_delays(monkeypatch):
     monkeypatch.setattr("custom_components.panasonic_hc.panasonic_hc.NOTIFY_SETTLE_DELAY", 0)
+    monkeypatch.setattr("custom_components.panasonic_hc.panasonic_hc.COMMAND_CONFIRM_TIMEOUT", 0.05)
+    monkeypatch.setattr(
+        "custom_components.panasonic_hc.panasonic_hc.COMMAND_CONFIRM_INTERVAL", 0.001
+    )
