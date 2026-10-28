@@ -24,6 +24,7 @@ COMMAND_CONFIRM_TIMEOUT = 15
 COMMAND_CONFIRM_INTERVAL = 0.5
 CONNECTION_DEADLINE = 120
 _LOGGER = logging.getLogger(__name__)
+_CONNECTION_ERRORS = (BleakError, OSError, PanasonicHCException)
 
 
 class PanasonicHC:
@@ -129,13 +130,16 @@ class PanasonicHC:
                                 raise PanasonicHCException(
                                     "Controller disconnected during initialization"
                                 )
-                        except (BleakError, OSError, TimeoutError, PanasonicHCException) as err:
+                        except _CONNECTION_ERRORS as err:
                             failed_source = routes.selected
                             stage = self.transport.last_failure_stage or self.transport.stage
                             failures[failed_source or "no route selected"] = (
                                 f"{stage}: {describe_error(err)}"
                             )
-                            await self.async_disconnect()
+                            if self.transport.stage == "disconnect_failed":
+                                # Cleanup already failed. Keep ownership and let the next
+                                # recovery attempt close it before selecting any new route.
+                                raise
                             if failed_source is not None and failed_source == routes.preferred:
                                 # A bond belongs to its source. Changing it requires an explicit route reset.
                                 raise
@@ -156,21 +160,25 @@ class PanasonicHC:
                         routes.preferred = routes.selected
                         self.disconnected_event.clear()
                         return
-            except PanasonicAuthenticationError:
-                await self.async_disconnect()
-                raise
-            except (BleakError, OSError, TimeoutError, PanasonicHCException) as err:
-                await self.async_disconnect()
-                details = "; ".join(f"{source}: {reason}" for source, reason in failures.items())
-                raise PanasonicHCException(
-                    f"Could not initialize controller: {details or describe_error(err)}"
-                ) from err
-            except BaseException:
-                await self.async_disconnect()
+            except BaseException as err:
+                await self.async_disconnect(retry_failed=False)
+                if isinstance(err, PanasonicAuthenticationError):
+                    raise
+                if isinstance(err, _CONNECTION_ERRORS):
+                    details = "; ".join(
+                        f"{source}: {reason}" for source, reason in failures.items()
+                    )
+                    raise PanasonicHCException(
+                        f"Could not initialize controller: {details or describe_error(err)}"
+                    ) from err
                 raise
 
-    async def async_disconnect(self) -> bool:
+    async def async_disconnect(self, *, retry_failed: bool = True) -> bool:
         self._lost()
+        if not retry_failed and self.transport.stage == "disconnect_failed":
+            # Error handlers must not restart a failed 30-second teardown. A new
+            # recovery attempt, explicit reconnect or shutdown may retry it.
+            return False
         return await self.transport.disconnect()
 
     async def _write(self, command: protocol.Parcel) -> None:

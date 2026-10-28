@@ -423,3 +423,76 @@ async def test_cancelling_saved_source_wait_does_not_create_or_pair_a_client(the
         with pytest.raises(asyncio.CancelledError):
             await task
     assert thermostat.transport.client is None
+
+
+async def test_connect_cleanup_failure_is_not_retried_or_routed_again(thermostat, connected):
+    connected.start_notify.side_effect = BleakError("notification setup failed")
+    connected.disconnect.side_effect = TimeoutError("still closing")
+    thermostat.transport.client = None
+    thermostat.ready = False
+
+    async def establish(*args, route_policy, **kwargs):
+        route_policy.selected = "FIRST"
+        route_policy.candidates = {"FIRST", "OTHER"}
+        return connected
+
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection", side_effect=establish
+    ) as create:
+        with pytest.raises(PanasonicHCException, match="notification setup failed"):
+            await thermostat.async_connect()
+    create.assert_awaited_once()
+    connected.disconnect.assert_awaited_once()
+    assert thermostat.transport.client is connected
+    assert thermostat.transport.stage == "disconnect_failed"
+    assert not thermostat.available
+
+
+async def test_failed_previous_teardown_gets_one_attempt_per_connect(thermostat, connected):
+    connected.disconnect.side_effect = TimeoutError("still closing")
+    thermostat.ready = False
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection", AsyncMock()
+    ) as create:
+        with pytest.raises(PanasonicHCException, match="previous BLE session"):
+            await thermostat.async_connect()
+    connected.disconnect.assert_awaited_once()
+    create.assert_not_awaited()
+    assert thermostat.transport.client is connected
+
+
+async def test_error_cleanup_keeps_owner_until_explicit_retry(thermostat, connected):
+    connected.disconnect.side_effect = [TimeoutError("still closing"), None]
+    assert await thermostat.async_disconnect(retry_failed=False) is False
+    assert await thermostat.async_disconnect(retry_failed=False) is False
+    connected.disconnect.assert_awaited_once()
+    assert thermostat.transport.client is connected
+    assert await thermostat.async_disconnect() is True
+    assert connected.disconnect.await_count == 2
+    assert thermostat.transport.client is None
+
+
+async def test_worker_waits_before_retrying_failed_cleanup(thermostat, connected):
+    from custom_components.panasonic_hc.runtime import _async_run_thermostat
+
+    thermostat.ready = False
+    connected.disconnect.side_effect = TimeoutError("still closing")
+
+    async def backoff(delay):
+        assert delay == 5
+        connected.disconnect.assert_awaited_once()
+        assert thermostat.transport.client is connected
+        raise asyncio.CancelledError
+
+    with (
+        patch(
+            "custom_components.panasonic_hc.transport.establish_connection", AsyncMock()
+        ) as create,
+        patch("custom_components.panasonic_hc.runtime.asyncio.sleep", side_effect=backoff),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await _async_run_thermostat(thermostat)
+    # Final shutdown may retry cleanup, but never allocate a replacement client.
+    assert connected.disconnect.await_count == 2
+    assert thermostat.transport.client is connected
+    create.assert_not_awaited()

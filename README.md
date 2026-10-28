@@ -59,7 +59,7 @@ For ESPHome, follow the official [BLE Client numeric-comparison documentation](h
 
 From 0.2.2, security-related notification errors keep the existing link alive while authentication finishes, with a 60-second subscription/security deadline. The component does not call `pair()` on every reconnect. Other notification errors fail normally. Any failed readiness attempt on the saved source is reported directly instead of probing unrelated adapters.
 
-Teardown has a 30-second deadline, allowing the backend's 20-second disconnect response and 5-second slot settlement. A still-connected client remains owned after cleanup fails. Reconnect, setup retries and config-flow retries must close that client before creating a replacement. Unload reports failure if the session is still live.
+Teardown has a 30-second deadline, allowing the backend's 20-second disconnect response and 5-second slot settlement. A still-connected client remains owned after cleanup fails. Reconnect, setup retries and config-flow retries must close that client before creating a replacement. Unload reports failure if the session is still live. Error handling does not immediately repeat a teardown that already failed; the next recovery attempt, explicit reconnect or shutdown retries it while retaining the original client.
 
 ### ESP32 bond reuse on IDF 5.5.6
 
@@ -92,7 +92,7 @@ python tools/proxy_security/test_sdk_bond_reuse.py
 pytest -q --cov=custom_components.panasonic_hc --cov-report=term-missing
 ```
 
-Tests use synthetic frames and mocked BLE against real HA classes; they do not operate hardware. See [changelog](CHANGELOG.md), [0.2.3 review](docs/REVIEW-0.2.3.md) and [validation](docs/VALIDATION.md) for evidence and remaining boundaries.
+Tests use synthetic frames and mocked BLE against real HA classes; they do not operate hardware. See [changelog](CHANGELOG.md), [0.2.4 review](docs/REVIEW-0.2.4.md) and [validation](docs/VALIDATION.md) for evidence and remaining boundaries.
 
 ## Attribution and licensing
 

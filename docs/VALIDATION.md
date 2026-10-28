@@ -1,5 +1,19 @@
 # Validation
 
+## 0.2.4 — 2026-10-28
+
+- 161 Python tests, 93% coverage, Ruff lint/format, mypy and the actual-C SDK
+  regression pass locally.
+- Negative controls before the implementation exposed repeated failed teardown
+  (three backend calls for one connect) and loss of the original notification error.
+- Four new lifecycle tests cover one cleanup attempt, retained ownership, explicit
+  retry and recovery-worker backoff. The route-fallback regression checks that the
+  old session closes before selecting the next backend.
+- Paired-source selection, security/readiness waits, notification settling and
+  manual reconnect remain. No integration pair/unpair or diagnostic APIs were found.
+- No production deployment/reload/restart or physical reconnect test was performed
+  for this local cleanup. The deployed version remains 0.2.3.
+
 ## 0.2.3 — 2026-10-28
 
 - 157 Python tests, the extracted real-C SDK regression, Ruff lint/format, mypy and

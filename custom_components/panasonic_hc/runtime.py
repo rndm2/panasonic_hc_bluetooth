@@ -17,7 +17,6 @@ async def _async_run_thermostat(thermostat: PanasonicHC) -> None:
         while True:
             try:
                 if not thermostat.available:
-                    await thermostat.async_disconnect()
                     await thermostat.async_connect()
                 await thermostat.async_get_status()
             except Exception as err:
@@ -31,7 +30,7 @@ async def _async_run_thermostat(thermostat: PanasonicHC) -> None:
                         exc_info=not isinstance(err, PanasonicHCException),
                     )
                     unavailable_logged = True
-                await thermostat.async_disconnect()
+                await thermostat.async_disconnect(retry_failed=False)
                 if isinstance(err, PanasonicAuthenticationError):
                     delay = max(delay, 60)
                 await asyncio.sleep(delay)
