@@ -1,6 +1,36 @@
 # Validation
 
-## 0.2.2 candidate — 2026-10-28
+## 0.2.3 — 2026-10-28
+
+- 157 Python tests, the extracted real-C SDK regression, Ruff lint/format, mypy and
+  whitespace checks pass. Real installed HA/retry-connector wrapping is exercised.
+- Firmware binary checks confirm the diagnostic class and all three temporary API
+  actions are absent, while original manual connect remains present. Partition
+  SHA256 is unchanged. Main YAML has no diagnostic include or custom build path.
+- INFO logging retains manual numeric comparison. Encryption, the exact SDK fix,
+  NVS bond retention and original manual pairing controls remain.
+- The bt-only artifact is approximately 73 MiB. Its manifest records source
+  fingerprints and SDK license. Shared SDK SHA256 is unchanged. Extra generated
+  full-SDK files and task build trees were removed. One previous known-good OTA
+  image remains privately stored for rollback.
+- Candidate HA configuration check passed and Core restarted. An unrelated
+  aigues_barcelona setup wait delayed one startup; no changes were made to it.
+- The first manual reconnect exposed a short readiness race. The bounded same-source
+  wait fixes it. Four subsequent manual reconnects succeeded, the latter three
+  taking 3.7, 3.3 and 3.3 seconds including API verification.
+- A filtered HA state observer measured a separate target-proxy reboot: unavailable
+  at 18:16:59.511946 UTC, valid cool/current-temperature status at 18:17:12.758232 UTC,
+  giving 13.25 seconds. No manual reconnect or pairing confirmation was used.
+- Saved source remains the same proxy and all three Bluetooth entries stay enabled.
+  Removed diagnostic services are checked against HA's service registry.
+- The explicit route-reset option is tested with real HA service/config-entry types.
+  It is not invoked against the working controller to avoid probing unpaired sources.
+- No HVAC setting commands, unrelated proxy/adaptor changes or bond removal were
+  performed. These are bounded recovery tests, not a multi-day uptime or all-model
+  certification. The pinned SDK workaround remains an upgrade dependency.
+
+
+## 0.2.2 — 2026-10-28
 
 - Environment: HA 2026.10.4, ESPHome 2026.10.1, IDF 5.5.6, CZ-RTC6BLW.
 - 140 automated integration tests pass. Ruff lint/format, mypy and whitespace

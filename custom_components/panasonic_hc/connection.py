@@ -13,6 +13,8 @@ from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 from habluetooth import HaBleakClientWrapper
 
+from .errors import PanasonicSourceUnavailable
+
 
 @dataclass
 class RoutePolicy:
@@ -64,7 +66,7 @@ class PanasonicBleakClient(HaBleakClientWrapper):
                         )
                         if backend is not None:
                             return backend
-            raise BleakError(
+            raise PanasonicSourceUnavailable(
                 "The paired Bluetooth adapter or proxy is unavailable or busy; "
                 "waiting for the same source to return"
             )

@@ -32,7 +32,7 @@ def prepare(sdk_root: Path, output: Path) -> Path:
         output.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix=f".{output.name}-", dir=output.parent) as temp:
             staged = Path(temp) / "component"
-            shutil.copytree(sdk_root / "components/bt", staged / "components/bt", symlinks=True)
+            shutil.copytree(sdk_root / "components/bt", staged / "components/bt", symlinks=False)
             (staged / SDK_RELATIVE_SOURCE).write_bytes(fixed)
             if original.read_bytes() != source:
                 raise RuntimeError("Shared SDK changed during preparation")

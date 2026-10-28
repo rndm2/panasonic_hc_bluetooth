@@ -45,7 +45,7 @@ During initial setup or an explicit route reset, the Panasonic client tries avai
 
 From **0.2.3**, reconnect stays with the saved source. If it is offline, busy or fails readiness, HA retries that source instead of contacting other adapters whose pairing is unknown. This also applies while the proxy reboots. A stronger advertisement does not move an existing controller to a different adapter. To change sources, pair the new source first and deliberately reset the route through the Reconnect action.
 
-Route selection still uses HA's slot accounting and bounded connection/cleanup. First-time discovery retains alternative-route search so one failing local adapter does not prevent setup through a paired proxy. Every other Bluetooth device and adapter remains enabled.
+Route selection still uses HA's slot accounting and bounded connection/cleanup. A short source-readiness/slot-release window is retried on the same source within the existing 25-second connection budget, before allocating a new backend. First-time discovery retains alternative-route search so one failing local adapter does not prevent setup through a paired proxy. Every other Bluetooth device and adapter remains enabled.
 
 This uses a small, isolated subclass of HA's Bluetooth client and its protected route-selection hooks, tested against HA 2026.10.4. It retains HA's slot accounting and connection lifecycle; it does not monkeypatch shared classes, alter scanner scores, disable adapters or restart proxies. These protected hooks are a compatibility dependency to review on HA upgrades. See [Bluetooth investigation](docs/BLUETOOTH.md).
 

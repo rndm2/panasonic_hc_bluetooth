@@ -19,6 +19,8 @@ def package(tmp_path, monkeypatch):
     original = sdk / installer.SDK_RELATIVE_SOURCE
     original.parent.mkdir(parents=True)
     original.write_bytes(source)
+    (sdk / "components/bt/unchanged.txt").write_text("shared source must remain unchanged")
+    (sdk / "components/bt/linked.txt").symlink_to(sdk / "components/bt/unchanged.txt")
     (sdk / "unrelated-component.txt").write_text("not part of the deployed bt component")
     return installer, sdk, tmp_path / "production-bt", original
 
@@ -36,6 +38,12 @@ def test_component_preparation_is_scoped_idempotent_and_does_not_share_writable_
     metadata = json.loads((output / "panasonic-bond-fix.json").read_text())
     assert metadata["patched_source_sha256"] == hashlib.sha256(patched.read_bytes()).hexdigest()
     patched.write_text("test output mutation")
+    (component / "unchanged.txt").write_text("output-only edit")
+    assert not (component / "linked.txt").is_symlink()
+    (component / "linked.txt").write_text("another output-only edit")
+    assert (
+        sdk / "components/bt/unchanged.txt"
+    ).read_text() == "shared source must remain unchanged"
     assert original.read_bytes() == before
 
 

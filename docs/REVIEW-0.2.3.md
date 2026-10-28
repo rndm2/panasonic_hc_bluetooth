@@ -21,8 +21,17 @@ atomically, records provenance and license, refuses modified output and leaves
 shared SDK input unchanged. Tests cover wrong revision, output mutation, partial
 copy failure, idempotence and accidental output inside the shared SDK.
 
-152 Python tests plus the extracted real-C bond regression pass locally. Ruff,
+157 Python tests plus the extracted real-C bond regression pass locally. Ruff,
 formatting, mypy and firmware compilation are required before deployment. Live
 validation is recorded in VALIDATION.md. Private HA hooks and the pinned SDK
 workaround remain explicit compatibility dependencies, not a multi-day uptime
 or cross-model guarantee.
+
+The first live reconnect exposed a short source-readiness window after closing the
+previous session. The transport now waits for the typed pre-allocation readiness
+failure within its existing 25-second connect budget. It does not retry arbitrary
+connection failures or create sessions on other adapters. Error-chain traversal is
+shared with authentication classification. Tests cover actual HA/retry-connector
+exception wrapping, delayed readiness, bounded waiting, cancellation and a real
+connect timeout after a readiness wait. Four subsequent manual reconnects passed,
+then a separate proxy reboot recovered automatically in 13.25 seconds.

@@ -332,3 +332,94 @@ async def test_security_disconnect_preserves_cause_and_does_not_try_other_adapte
     assert thermostat.transport.last_failure_stage == "authenticating"
     connected.pair.assert_not_awaited()
     connected.unpair.assert_not_called()
+
+
+async def test_saved_source_slot_release_race_waits_without_switching_adapters(
+    thermostat, connected
+):
+    from custom_components.panasonic_hc.errors import PanasonicSourceUnavailable
+
+    pending = BleakError("retry connector wrapper")
+    pending.__cause__ = PanasonicSourceUnavailable("slot not released yet")
+    thermostat.transport.client = None
+    thermostat.ready = False
+    thermostat.transport.routes.preferred = "PAIRED"
+    calls = 0
+
+    async def establish(*args, route_policy, **kwargs):
+        nonlocal calls
+        calls += 1
+        assert route_policy.preferred == "PAIRED"
+        assert not route_policy.excluded
+        if calls == 1:
+            raise pending
+        route_policy.selected = "PAIRED"
+        return connected
+
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection", side_effect=establish
+    ):
+        await thermostat.async_connect()
+    assert calls == 2
+    assert thermostat.available
+    connected.disconnect.assert_not_awaited()
+    connected.pair.assert_not_awaited()
+    await thermostat.async_disconnect()
+
+
+async def test_saved_source_wait_is_bounded_and_allocates_no_session(thermostat):
+    from custom_components.panasonic_hc.errors import PanasonicSourceUnavailable
+
+    with (
+        patch(
+            "custom_components.panasonic_hc.transport.establish_connection",
+            AsyncMock(side_effect=PanasonicSourceUnavailable("busy")),
+        ),
+        patch("custom_components.panasonic_hc.transport.CONNECT_TIMEOUT", 0.01),
+    ):
+        with pytest.raises(PanasonicSourceUnavailable, match="did not become available"):
+            await thermostat.transport.connect()
+    assert thermostat.transport.client is None
+
+
+async def test_real_connect_timeout_after_source_wait_is_not_mislabeled(thermostat):
+    from custom_components.panasonic_hc.errors import PanasonicSourceUnavailable
+
+    calls = 0
+
+    async def establish(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise PanasonicSourceUnavailable("slot not ready")
+        await asyncio.Event().wait()
+
+    with (
+        patch(
+            "custom_components.panasonic_hc.transport.establish_connection", side_effect=establish
+        ),
+        patch("custom_components.panasonic_hc.transport.CONNECT_TIMEOUT", 0.01),
+    ):
+        with pytest.raises(TimeoutError):
+            await thermostat.transport.connect()
+    assert calls == 2
+
+
+async def test_cancelling_saved_source_wait_does_not_create_or_pair_a_client(thermostat):
+    from custom_components.panasonic_hc.errors import PanasonicSourceUnavailable
+
+    started = asyncio.Event()
+
+    async def establish(*args, **kwargs):
+        started.set()
+        raise PanasonicSourceUnavailable("busy")
+
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection", side_effect=establish
+    ):
+        task = asyncio.create_task(thermostat.transport.connect())
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert thermostat.transport.client is None

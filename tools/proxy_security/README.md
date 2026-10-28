@@ -87,3 +87,33 @@ A second raw ESPHome API client cannot simply run this test alongside HA:
 Bluetooth replies go to the active advertisements subscriber. Earlier probes
 without subscriber ownership produced invalid timeout evidence. Do not steal
 HA's Bluetooth subscription just to make a diagnostic client receive replies.
+
+
+## Production operation and rollback
+
+Only the bt artifact, SDK pin/config and normal manual pairing controls are
+required on the proxy. The diagnostic header and its three API actions are not
+part of the production configuration. Use INFO logging and an explicit INFO
+numeric-comparison message. Do not enable automatic pairing confirmation.
+
+Before changing the SDK version, review the upstream key-retention behavior and
+this patch. The preparer rejects an unknown SMP fingerprint. Do not silently apply
+the workaround to another version. After rebuilding, validate protected controller
+status after reconnect and proxy reboot before treating the upgrade as successful.
+
+For the deployed installation, one existing known-good OTA image is retained at
+`/data/panasonic_hc_bluetooth/rollback.ota.bin`, with its fingerprint in
+`rollback.json`. Keep firmware images private: they contain device configuration.
+They are not committed to Git or attached to public releases. Roll back that
+application image with the target's existing OTA credentials and current YAML:
+
+```sh
+esphome upload --device <proxy-ip> \
+  --file /data/panasonic_hc_bluetooth/rollback.ota.bin \
+  /config/esphome/bluetooth-proxy.yaml
+```
+
+This does not flash a factory/NVS image. Integration rollback is separate: install
+the previous HACS release. Retain the existing config entry and entity history.
+For an intentional adapter change, pair the new source first and use the explicit
+Search Bluetooth routes again option in Reconnect.
