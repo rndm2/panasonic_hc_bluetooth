@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+## 0.2.4 — 2026-10-28
+
+- Remove repeated teardown attempts within one failed connection/recovery cycle. Retain the live client and original failure until the next recovery attempt, explicit reconnect or shutdown retries cleanup.
+- Let transport connection setup own closing the previous session instead of pre-closing it in both the polling worker and each route-error handler.
+- Preserve paired-source selection, readiness/security waits, cancellation cleanup and manual reconnect behavior.
+
 ## 0.2.3
 
 - Keep reconnect on the saved paired source while it is offline, busy or fails readiness. Initial setup still searches available routes.
@@ -42,8 +50,6 @@
 
 
 All notable changes are documented here. Versions follow Semantic Versioning.
-
-## [Unreleased]
 
 ## [0.1.2] - 2026-10-09
 

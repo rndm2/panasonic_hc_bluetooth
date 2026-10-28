@@ -478,6 +478,9 @@ async def test_missing_status_tries_next_route_before_flow_fails(thermostat, con
     attempts = []
 
     async def establish(*args, route_policy, **kwargs):
+        if attempts:
+            # Route fallback must still close the previous session first.
+            silent.disconnect.assert_awaited_once()
         attempts.append(set(route_policy.excluded))
         route_policy.selected = "SILENT" if len(attempts) == 1 else "PROXY"
         return silent if len(attempts) == 1 else connected
