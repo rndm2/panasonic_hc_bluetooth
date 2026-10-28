@@ -12,7 +12,8 @@ from homeassistant.helpers import selector
 from homeassistant.helpers.device_registry import format_mac
 
 from .const import DOMAIN, MODEL
-from .panasonic_hc import PanasonicHC, PanasonicHCException
+from .errors import PanasonicAuthenticationError, PanasonicHCException
+from .panasonic_hc import PanasonicHC
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,6 +39,8 @@ class PanasonicHCConfigFlow(ConfigFlow, domain=DOMAIN):
         try:
             await thermostat.async_connect()
             self._preferred_source = thermostat.transport.routes.preferred
+        except PanasonicAuthenticationError:
+            return "authentication_failed"
         except PanasonicHCException:
             return "cannot_connect"
         except Exception:

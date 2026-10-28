@@ -19,6 +19,7 @@ class RoutePolicy:
     preferred: str | None = None
     excluded: set[str] = field(default_factory=set)
     selected: str | None = None
+    candidates: set[str] = field(default_factory=set)
 
 
 class PanasonicBleakClient(HaBleakClientWrapper):
@@ -40,9 +41,11 @@ class PanasonicBleakClient(HaBleakClientWrapper):
         return backend
 
     def _async_get_best_available_backend_and_device(self, manager):
+        paths = manager.async_scanner_devices_by_address(self._target_address, True)
+        self._route_policy.candidates = {path.scanner.source for path in paths}
         preferred = self._route_policy.preferred
         if preferred is not None and preferred not in self._route_policy.excluded:
-            for path in manager.async_scanner_devices_by_address(self._target_address, True):
+            for path in paths:
                 if path.scanner.source == preferred:
                     backend = self._async_get_backend_for_ble_device(
                         manager, path.scanner, path.ble_device

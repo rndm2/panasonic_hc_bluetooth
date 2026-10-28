@@ -48,6 +48,8 @@ async def async_get_config_entry_diagnostics(
                 "rejected_temperature_samples": controller.state.rejected_temperatures,
                 "connection_stage": controller.transport.stage,
                 "connection_attempts": controller.transport.connect_attempts,
+                "authentication_attempts": controller.transport.authentication_attempts,
+                "last_failure_stage": controller.transport.last_failure_stage,
                 "command_failures": controller.command_failures,
                 "status_age_seconds": (
                     round(now - controller.state.status_at, 1)

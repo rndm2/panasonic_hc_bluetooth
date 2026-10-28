@@ -27,3 +27,14 @@ The integration has no pairing wizard. A proposed wizard would need to select th
 The deployed ESPHome proxy already has `display_yes_no`, a controller-specific BLE client, a numeric-comparison event, a confirmation action and manual connect/disconnect/remove-bond actions. Its BLE client has `auto_connect: false`; the proxy has one active slot. These firmware-specific facilities are distinct from HA's generic Bluetooth client API. No firmware or bonds were changed during this rewrite.
 
 [ESPHome BLE Client](https://esphome.io/components/ble_client/) supports numeric-comparison triggers/replies. [bleak-esphome](https://github.com/Bluetooth-Devices/bleak-esphome) provides pairing when the proxy reports the feature; the inspected proxy API does not by itself supply a generic HA user-facing PIN confirmation flow. Human confirmation on the Panasonic controller remains required. Unattended confirmation is not implemented.
+
+
+## 0.2.2: protected session before notifications
+
+A new live trace showed GATT open and service discovery followed by an unauthenticated CCCD write (handle 0x13, status 5). The old integration immediately disconnected; an authentication-failure callback followed. ESP-IDF can remove bonding keys on this failure path, but the trace does not prove which event first invalidated this installation's bond. Concurrent OTA/reboots explain separate proxy API resets and must not be confused with GATT authentication errors.
+
+The transport now calls the public Bleak `pair()` API after establishing GATT and before registering notifications. The backend controls whether an existing bond can be reused or a new manual pairing exchange is needed. No code is accepted automatically and no unpair/remove-bond API is called. Authentication has its own 60-second deadline, with a 120-second total readiness deadline. A confirmed preferred source's authentication failure is surfaced directly instead of trying to repair it through other adapters.
+
+Route enumeration records candidate sources. Once all observed candidates failed, setup stops without another selection timeout. Error summaries preserve per-route reasons and non-empty timeout descriptions. Authentication errors have a distinct flow error; the running poller starts authentication retries at 60 seconds and backs off to 300 seconds, logging the outage once. HA owns initial-entry setup retry scheduling.
+
+The proxy's actual ESP-IDF build defaults to Secure Connections + MITM + Bonding. Missing explicit auth_mode YAML therefore does not prove bonding was disabled. Firmware security settings were not changed as part of this fix.

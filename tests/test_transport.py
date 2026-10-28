@@ -447,6 +447,7 @@ async def test_notification_failure_tries_another_route_without_resending_comman
 ):
     first = Mock(is_connected=True)
     first.disconnect = AsyncMock()
+    first.pair = AsyncMock()
     first.start_notify = AsyncMock(side_effect=BleakError("Not connected"))
     exclusions = []
 
@@ -472,6 +473,7 @@ async def test_missing_status_tries_next_route_before_flow_fails(thermostat, con
     silent = Mock(is_connected=True)
     silent.start_notify = AsyncMock()
     silent.disconnect = AsyncMock()
+    silent.pair = AsyncMock()
     silent.write_gatt_char = AsyncMock()
     attempts = []
 
@@ -524,3 +526,225 @@ async def test_route_search_has_total_deadline(thermostat):
             await thermostat.async_connect()
     assert thermostat.transport.client is None
     assert not thermostat.available
+
+
+async def test_notifications_wait_for_authentication(thermostat, connected):
+    started, confirmed = asyncio.Event(), asyncio.Event()
+
+    async def authenticate():
+        started.set()
+        await confirmed.wait()
+
+    connected.pair.side_effect = authenticate
+    thermostat.transport.client = None
+    thermostat.ready = False
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection",
+        AsyncMock(return_value=connected),
+    ):
+        task = asyncio.create_task(thermostat.async_connect())
+        await started.wait()
+        assert thermostat.transport.stage == "authenticating"
+        connected.start_notify.assert_not_awaited()
+        connected.write_gatt_char.assert_not_awaited()
+        connected.disconnect.assert_not_awaited()
+        confirmed.set()
+        await task
+    assert thermostat.available
+    connected.pair.assert_awaited_once()
+    assert thermostat.transport.authentication_attempts == 1
+    await thermostat.async_disconnect()
+
+
+@pytest.mark.parametrize("failure", [BleakError("bond rejected"), NotImplementedError()])
+async def test_failed_authentication_never_subscribes_or_removes_bond(
+    thermostat, connected, failure
+):
+    from custom_components.panasonic_hc.errors import PanasonicAuthenticationError
+
+    connected.pair.side_effect = failure
+    thermostat.transport.client = None
+    thermostat.ready = False
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection",
+        AsyncMock(return_value=connected),
+    ):
+        with pytest.raises(PanasonicAuthenticationError, match="authentication failed") as exc:
+            await thermostat.async_connect()
+    assert (str(failure) or type(failure).__name__) in str(exc.value)
+    connected.start_notify.assert_not_awaited()
+    connected.write_gatt_char.assert_not_awaited()
+    connected.unpair.assert_not_called()
+    connected.disconnect.assert_awaited_once()
+    assert thermostat.transport.last_failure_stage == "authenticating"
+    assert not thermostat.available
+
+
+async def test_authentication_timeout_has_actionable_error(thermostat, connected):
+    from custom_components.panasonic_hc.errors import PanasonicAuthenticationError
+
+    async def authenticate():
+        await asyncio.Event().wait()
+
+    connected.pair.side_effect = authenticate
+    thermostat.transport.client = None
+    thermostat.ready = False
+    with (
+        patch(
+            "custom_components.panasonic_hc.transport.establish_connection",
+            AsyncMock(return_value=connected),
+        ),
+        patch("custom_components.panasonic_hc.transport.AUTHENTICATION_TIMEOUT", 0.01),
+    ):
+        with pytest.raises(PanasonicAuthenticationError, match="operation timed out"):
+            await thermostat.async_connect()
+    connected.start_notify.assert_not_awaited()
+    connected.disconnect.assert_awaited_once()
+    assert not thermostat._lock.locked()
+
+
+async def test_cancelled_authentication_cleans_up_without_subscribing(thermostat, connected):
+    started = asyncio.Event()
+
+    async def authenticate():
+        started.set()
+        await asyncio.Event().wait()
+
+    connected.pair.side_effect = authenticate
+    thermostat.transport.client = None
+    thermostat.ready = False
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection",
+        AsyncMock(return_value=connected),
+    ):
+        task = asyncio.create_task(thermostat.async_connect())
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    connected.start_notify.assert_not_awaited()
+    connected.disconnect.assert_awaited_once()
+    assert thermostat.transport.client is None
+    assert not thermostat._lock.locked()
+
+
+async def test_disconnected_during_authentication_never_subscribes(thermostat, connected):
+    from custom_components.panasonic_hc.errors import PanasonicAuthenticationError
+
+    async def authenticate():
+        connected.is_connected = False
+
+    connected.pair.side_effect = authenticate
+    thermostat.transport.client = None
+    thermostat.ready = False
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection",
+        AsyncMock(return_value=connected),
+    ):
+        with pytest.raises(PanasonicAuthenticationError, match="rejected authentication"):
+            await thermostat.async_connect()
+    connected.start_notify.assert_not_awaited()
+    connected.disconnect.assert_awaited_once()
+
+
+async def test_preferred_peer_authentication_failure_does_not_pair_other_adapters(
+    thermostat, connected
+):
+    from custom_components.panasonic_hc.errors import PanasonicAuthenticationError
+
+    connected.pair.side_effect = BleakError("bond rejected")
+    thermostat.transport.routes.preferred = "BONDED_PROXY"
+
+    async def establish(*args, route_policy, **kwargs):
+        route_policy.selected = "BONDED_PROXY"
+        return connected
+
+    thermostat.transport.client = None
+    thermostat.ready = False
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection", side_effect=establish
+    ) as create:
+        with pytest.raises(PanasonicAuthenticationError, match="bond rejected"):
+            await thermostat.async_connect()
+    assert create.await_count == 1
+    connected.unpair.assert_not_called()
+
+
+async def test_every_reconnect_authenticates_before_notifications(thermostat, connected):
+    order = []
+    connected.pair.side_effect = lambda: order.append("authenticated")
+    connected.start_notify.side_effect = lambda *args: order.append("subscribed")
+    thermostat.transport.client = None
+    thermostat.ready = False
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection",
+        AsyncMock(return_value=connected),
+    ):
+        await thermostat.async_connect()
+        await thermostat.async_disconnect()
+        await thermostat.async_connect()
+    assert order == ["authenticated", "subscribed", "authenticated", "subscribed"]
+    assert thermostat.available
+    await thermostat.async_disconnect()
+
+
+async def test_known_exhausted_routes_preserve_cause_without_extra_attempt(thermostat):
+    attempts = []
+
+    async def establish(*args, route_policy, **kwargs):
+        route_policy.candidates = {"FIRST", "SECOND"}
+        source = "FIRST" if not attempts else "SECOND"
+        attempts.append(source)
+        route_policy.selected = source
+        raise BleakError(f"{source} failed")
+
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection", side_effect=establish
+    ):
+        with pytest.raises(PanasonicHCException) as exc:
+            await thermostat.async_connect()
+    assert attempts == ["FIRST", "SECOND"]
+    assert "FIRST failed" in str(exc.value)
+    assert "SECOND failed" in str(exc.value)
+
+
+async def test_total_deadline_does_not_hide_earlier_route_error(thermostat):
+    calls = 0
+
+    async def establish(*args, route_policy, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            route_policy.selected = "FIRST"
+            raise BleakError("original route failure")
+        await asyncio.Event().wait()
+
+    with (
+        patch(
+            "custom_components.panasonic_hc.transport.establish_connection", side_effect=establish
+        ),
+        patch("custom_components.panasonic_hc.panasonic_hc.CONNECTION_DEADLINE", 0.01),
+    ):
+        with pytest.raises(PanasonicHCException, match="original route failure"):
+            await thermostat.async_connect()
+
+
+async def test_disconnect_callback_during_authentication_retains_failed_phase(
+    thermostat, connected
+):
+    from custom_components.panasonic_hc.errors import PanasonicAuthenticationError
+
+    async def authenticate():
+        thermostat.transport._disconnected(connected)
+        raise BleakError("link lost")
+
+    connected.pair.side_effect = authenticate
+    thermostat.transport.client = None
+    thermostat.ready = False
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection",
+        AsyncMock(return_value=connected),
+    ):
+        with pytest.raises(PanasonicAuthenticationError, match="link lost"):
+            await thermostat.async_connect()
+    assert thermostat.transport.last_failure_stage == "authenticating"

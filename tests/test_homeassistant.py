@@ -431,3 +431,47 @@ async def test_setup_restores_preferred_source(hass, device, thermostat):
         with pytest.raises(ConfigEntryNotReady):
             await async_setup_entry(hass, entry)
     assert observed == ["PROXY"]
+
+
+async def test_flow_authentication_failure_has_specific_error(device):
+    from custom_components.panasonic_hc.errors import PanasonicAuthenticationError
+
+    flow = PanasonicHCConfigFlow()
+    flow.hass = Mock()
+    flow.mac_address = device.address
+    with (
+        patch(
+            "custom_components.panasonic_hc.config_flow.bluetooth.async_ble_device_from_address",
+            return_value=device,
+        ),
+        patch(
+            "custom_components.panasonic_hc.config_flow.PanasonicHC.async_connect",
+            AsyncMock(side_effect=PanasonicAuthenticationError("Confirm pairing")),
+        ),
+        patch(
+            "custom_components.panasonic_hc.config_flow.PanasonicHC.async_disconnect", AsyncMock()
+        ) as disconnect,
+    ):
+        assert await flow._validate_connection() == "authentication_failed"
+        disconnect.assert_awaited_once()
+
+
+async def test_authentication_retries_back_off_and_log_once(caplog):
+    from custom_components.panasonic_hc.errors import PanasonicAuthenticationError
+    from custom_components.panasonic_hc.runtime import _async_run_thermostat
+
+    thermostat = Mock()
+    thermostat.available = True
+    thermostat.async_get_status = AsyncMock(
+        side_effect=[
+            PanasonicAuthenticationError("Confirm pairing"),
+            PanasonicAuthenticationError("Confirm pairing"),
+            asyncio.CancelledError(),
+        ]
+    )
+    thermostat.async_disconnect = AsyncMock()
+    with patch("custom_components.panasonic_hc.runtime.asyncio.sleep", AsyncMock()) as sleep:
+        with pytest.raises(asyncio.CancelledError):
+            await _async_run_thermostat(thermostat)
+    assert [call.args[0] for call in sleep.await_args_list] == [60, 120]
+    assert caplog.text.count("Panasonic controller unavailable") == 1

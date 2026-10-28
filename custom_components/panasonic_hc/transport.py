@@ -8,9 +8,12 @@ from bleak.backends.device import BLEDevice
 from bleak_retry_connector import establish_connection
 
 from .connection import PanasonicBleakClient, RoutePolicy
+from .errors import PanasonicAuthenticationError, describe_error
 
 BLE_CHAR_WRITE = "4d200002-eff3-4362-b090-a04cab3f1da0"
 BLE_CHAR_NOTIFY = "4d200003-eff3-4362-b090-a04cab3f1da0"
+CONNECT_TIMEOUT = 25
+AUTHENTICATION_TIMEOUT = 60
 NOTIFY_SETTLE_DELAY = 0.5
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +35,8 @@ class BLETransport:
         self.connect_attempts = 0
         self.accept_notifications = False
         self.routes = RoutePolicy()
+        self.authentication_attempts = 0
+        self.last_failure_stage: str | None = None
 
     @property
     def connected(self) -> bool:
@@ -48,9 +53,10 @@ class BLETransport:
         self.connect_attempts += 1
         self.stage = "connecting"
         self.routes.selected = None
-        self.device = self._resolve()
+        phase = self.stage
         try:
-            async with asyncio.timeout(25):
+            self.device = self._resolve()
+            async with asyncio.timeout(CONNECT_TIMEOUT):
                 self.client = await establish_connection(
                     PanasonicBleakClient,
                     self.device,
@@ -59,19 +65,34 @@ class BLETransport:
                     max_attempts=1,
                     route_policy=self.routes,
                 )
-                client = self.client
+            client = self.client
+            phase = self.stage = "authenticating"
+            self.authentication_attempts += 1
+            try:
+                async with asyncio.timeout(AUTHENTICATION_TIMEOUT):
+                    await client.pair()
+                if not client.is_connected:
+                    raise PanasonicAuthenticationError("Bluetooth peer rejected authentication")
+            except Exception as err:
+                raise PanasonicAuthenticationError(
+                    f"Bluetooth authentication failed: {describe_error(err)}. "
+                    "Check pairing with this adapter or proxy and confirm any matching "
+                    "code on the Panasonic controller. The integration does not request bond removal."
+                ) from err
 
-                def received(_handle, data: bytearray) -> None:
-                    if self.accept_notifications and self.client is client and client.is_connected:
-                        self._received(bytes(data))
+            def received(_handle, data: bytearray) -> None:
+                if self.accept_notifications and self.client is client and client.is_connected:
+                    self._received(bytes(data))
 
-                self.accept_notifications = True
-                self.stage = "subscribing"
-                await asyncio.sleep(NOTIFY_SETTLE_DELAY)
-                await client.start_notify(BLE_CHAR_NOTIFY, received)
-                await asyncio.sleep(NOTIFY_SETTLE_DELAY)
-                self.stage = "connected"
+            self.accept_notifications = True
+            phase = self.stage = "subscribing"
+            await asyncio.sleep(NOTIFY_SETTLE_DELAY)
+            await client.start_notify(BLE_CHAR_NOTIFY, received)
+            await asyncio.sleep(NOTIFY_SETTLE_DELAY)
+            self.stage = "connected"
+            self.last_failure_stage = None
         except BaseException:
+            self.last_failure_stage = phase
             await self.disconnect()
             raise
 

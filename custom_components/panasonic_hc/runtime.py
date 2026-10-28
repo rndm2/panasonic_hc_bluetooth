@@ -4,7 +4,8 @@ import asyncio
 import logging
 from contextlib import suppress
 
-from .panasonic_hc import PanasonicHC, PanasonicHCException
+from .errors import PanasonicAuthenticationError, PanasonicHCException
+from .panasonic_hc import PanasonicHC
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,6 +32,8 @@ async def _async_run_thermostat(thermostat: PanasonicHC) -> None:
                     )
                     unavailable_logged = True
                 await thermostat.async_disconnect()
+                if isinstance(err, PanasonicAuthenticationError):
+                    delay = max(delay, 60)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 300)
                 continue

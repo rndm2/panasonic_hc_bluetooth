@@ -1,7 +1,7 @@
 """Exercise the installed HA wrapper's real route-selection and slot paths."""
 
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from bleak.backends.device import BLEDevice
@@ -42,6 +42,7 @@ def test_failed_local_route_skipped_only_for_this_controller():
     backend = client._async_get_best_available_backend_and_device(manager)
     assert backend.scanner is proxy.scanner
     assert policy.selected == "PROXY"
+    assert policy.candidates == {"LOCAL", "PROXY"}
     manager.async_allocate_connection_slot.assert_not_called()
     local.scanner._finished_connecting.assert_not_called()
     # A separate controller/client still sees and may select the local adapter.
@@ -84,3 +85,14 @@ def test_all_excluded_routes_allocate_nothing():
         client._async_get_best_available_backend_and_device(manager)
     assert policy.selected is None
     manager.async_allocate_connection_slot.assert_not_called()
+
+
+async def test_public_pair_uses_selected_ha_backend():
+    path = route("PROXY", -80, remote=True)
+    client, _manager = client_for([path], RoutePolicy())
+    backend = Mock()
+    backend.pair = AsyncMock()
+    client._backend = backend
+    await client.pair()
+    backend.pair.assert_awaited_once()
+    backend.unpair.assert_not_called()

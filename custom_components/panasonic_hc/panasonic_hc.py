@@ -12,6 +12,7 @@ from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 
 from . import protocol
+from .errors import PanasonicAuthenticationError, PanasonicHCException, describe_error
 from .state import CURRENT_TEMPERATURE_MAX_AGE, ControllerState, Status
 from .transport import BLETransport
 
@@ -21,12 +22,8 @@ RESPONSE_TIMEOUT = 15
 COMMAND_QUEUE_TIMEOUT = 5
 COMMAND_CONFIRM_TIMEOUT = 15
 COMMAND_CONFIRM_INTERVAL = 0.5
-CONNECTION_DEADLINE = 90
+CONNECTION_DEADLINE = 120
 _LOGGER = logging.getLogger(__name__)
-
-
-class PanasonicHCException(Exception):
-    """Controller communication or confirmation failed."""
 
 
 class PanasonicHC:
@@ -119,6 +116,8 @@ class PanasonicHC:
             self._loop = asyncio.get_running_loop()
             routes = self.transport.routes
             routes.excluded.clear()
+            routes.candidates.clear()
+            failures: dict[str, str] = {}
             try:
                 async with asyncio.timeout(CONNECTION_DEADLINE):
                     while True:
@@ -132,10 +131,25 @@ class PanasonicHC:
                                 )
                         except (BleakError, OSError, TimeoutError, PanasonicHCException) as err:
                             failed_source = routes.selected
+                            stage = self.transport.last_failure_stage or self.transport.stage
+                            failures[failed_source or "no route selected"] = (
+                                f"{stage}: {describe_error(err)}"
+                            )
                             await self.async_disconnect()
+                            if (
+                                isinstance(err, PanasonicAuthenticationError)
+                                and failed_source is not None
+                                and failed_source == routes.preferred
+                            ):
+                                # A different adapter cannot repair this peer's bond.
+                                raise
                             if failed_source is None or failed_source in routes.excluded:
                                 raise
                             routes.excluded.add(failed_source)
+                            if routes.candidates and routes.candidates <= routes.excluded:
+                                # Do not let the retry connector spend another full
+                                # timeout selecting paths we already excluded.
+                                raise
                             _LOGGER.debug(
                                 "Controller route %s failed readiness: %s; trying another route",
                                 failed_source,
@@ -146,9 +160,15 @@ class PanasonicHC:
                         routes.preferred = routes.selected
                         self.disconnected_event.clear()
                         return
+            except PanasonicAuthenticationError:
+                await self.async_disconnect()
+                raise
             except (BleakError, OSError, TimeoutError, PanasonicHCException) as err:
                 await self.async_disconnect()
-                raise PanasonicHCException(f"Could not initialize controller: {err}") from err
+                details = "; ".join(f"{source}: {reason}" for source, reason in failures.items())
+                raise PanasonicHCException(
+                    f"Could not initialize controller: {details or describe_error(err)}"
+                ) from err
             except BaseException:
                 await self.async_disconnect()
                 raise

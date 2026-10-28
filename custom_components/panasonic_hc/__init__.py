@@ -15,7 +15,8 @@ from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError, Se
 from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN
-from .panasonic_hc import PanasonicHC, PanasonicHCException
+from .errors import PanasonicAuthenticationError, PanasonicHCException
+from .panasonic_hc import PanasonicHC
 from .runtime import _async_run_thermostat
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -82,6 +83,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: PanasonicHCConfigEntry) 
     thermostat.transport.routes.preferred = entry.data.get("preferred_source")
     try:
         await thermostat.async_connect()
+    except PanasonicAuthenticationError as err:
+        # Expected recovery failures already include their backend reason.
+        raise ConfigEntryNotReady(str(err)) from None
     except PanasonicHCException as err:
         raise ConfigEntryNotReady(str(err)) from err
     if (source := thermostat.transport.routes.preferred) and source != entry.data.get(

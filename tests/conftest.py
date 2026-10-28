@@ -49,6 +49,7 @@ def connected(thermostat):
     conn = Mock()
     conn.is_connected = True
     conn.disconnect = AsyncMock()
+    conn.pair = AsyncMock()
     conn.start_notify = AsyncMock()
 
     async def write(uuid, data):

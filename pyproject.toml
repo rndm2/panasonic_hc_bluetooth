@@ -1,11 +1,11 @@
 [project]
 name = "panasonic-hc-bluetooth"
-version = "0.2.1"
+version = "0.2.2"
 requires-python = ">=3.14"
 dependencies = ["bleak-retry-connector>=4.7.1"]
 
 [project.optional-dependencies]
-test = ["homeassistant==2026.10.0", "pytest>=9,<10", "pytest-asyncio>=1,<2", "pytest-cov>=7,<8", "pytest-homeassistant-custom-component==0.13.371", "aiousbwatcher==1.1.2", "serialx==1.11.0", "dbus-fast==5.0.22", "ruff>=0.16,<0.17", "mypy>=2.4,<3"]
+test = ["homeassistant==2026.10.4", "pytest>=9,<10", "pytest-asyncio>=1,<2", "pytest-cov>=7,<8", "pytest-homeassistant-custom-component==0.13.375", "aiousbwatcher==1.1.2", "serialx==1.11.0", "dbus-fast==5.0.22", "ruff>=0.16,<0.17", "mypy>=2.4,<3"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
