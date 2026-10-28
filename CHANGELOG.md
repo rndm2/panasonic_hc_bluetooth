@@ -2,12 +2,12 @@
 
 ## 0.2.2
 
-- Authenticate each BLE session through Bleak's public pair API before protected notification/status exchange.
-- Separate connection, authentication and overall readiness deadlines. Expose pairing failures with actionable messages and preserve cancellation cleanup.
-- Stop on authentication failure of the remembered peer without pairing other adapters. Never automatically accept a PIN or request removal of a bond.
+- Retain ownership of live BLE clients when cleanup fails; block overlapping reconnect, setup and flow attempts until teardown completes.
+- Allow 30 seconds for backend disconnect and slot settlement instead of cancelling cleanup after 10 seconds.
+- Wait on the same session when protected notification subscription reports pending authentication/encryption. Do not force pairing on every reconnect.
 - Preserve individual route failure reasons and stop immediately when known candidates are exhausted.
-- Back off authentication failures in the running poller, add a dedicated configuration-flow error, and report authentication attempts/last failure stage in diagnostics.
-- Add regressions for authentication ordering, reconnect, failure, timeout, cancellation, exhausted routes and log/backoff behavior.
+- Add actionable security errors, bounded security waits, running-poller backoff, and teardown/connection diagnostics.
+- Add regressions demonstrating the previous live-client ownership and overlapping reconnect defects, plus security-wait, cancellation and lifecycle guards.
 
 ## 0.2.1 — 2026-10-09
 

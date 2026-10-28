@@ -1,9 +1,9 @@
 # Panasonic H&C Bluetooth 0.2.2
 
-Fixes reconnect attempts accessing protected Panasonic characteristics before BLE authentication completes. Each session now explicitly authenticates using Bleak pair() before notification subscription and status exchange. A missing/invalid bond may still require comparing and confirming a pairing code on the controller and adapter/proxy controls.
+Fixes BLE session ownership during reconnect: failed cleanup keeps the old client, and new setup/reconnect attempts wait for teardown instead of creating overlapping sessions. The disconnect deadline now covers ESPHome's response and slot-settlement budgets.
 
-Connection, authentication and readiness have bounded deadlines. Route errors retain their original causes; exhausted routes no longer burn another selection timeout. Authentication failure on the remembered peer is surfaced directly, with a dedicated configuration-flow message. The running poller backs off authentication retries and logs an outage once.
+Protected notification errors wait for authentication on the existing connection. The integration does not initiate pair()/unpair(), accept a comparison code or restart proxies. A bond must already exist on the selected adapter or proxy.
 
-The integration does not automatically accept pairing codes, request bond removal, disable adapters or restart proxies. Existing domain and entity identity remain unchanged. Firmware changes are not required by this release.
+Route errors retain their original causes, known exhaustion returns promptly, and diagnostics report the failed stage and pending teardown. The running poller backs off repeated security failures. Domain, device and entity identity remain unchanged.
 
-Validation: 131 tests, 92% coverage, Ruff and mypy. See VALIDATION.md for hardware results and limits. Restart Home Assistant after installing.
+Validation: 138 tests against HA 2026.10.4, Ruff and mypy. See VALIDATION.md for hardware results and remaining limits. Restart Home Assistant after installing.

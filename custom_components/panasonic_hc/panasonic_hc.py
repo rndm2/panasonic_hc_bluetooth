@@ -173,9 +173,9 @@ class PanasonicHC:
                 await self.async_disconnect()
                 raise
 
-    async def async_disconnect(self) -> None:
+    async def async_disconnect(self) -> bool:
         self._lost()
-        await self.transport.disconnect()
+        return await self.transport.disconnect()
 
     async def _write(self, command: protocol.Parcel) -> None:
         try:

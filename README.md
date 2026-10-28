@@ -15,7 +15,7 @@ In HACS, add `https://github.com/rndm2/panasonic_hc_bluetooth` as an **Integrati
 
 Select the controller from nearby Bluetooth devices or enter its colon-separated MAC address. The list can include non-Panasonic devices; choose your controller. Setup validates its Panasonic GATT connection and status before creating an entry. Devices advertising `CZ-RTC6*` also support automatic discovery. A renamed device without identifying service/manufacturer data cannot be automatically classified as Panasonic.
 
-**This setup form has no PIN-confirmation UI.** From 0.2.2, each connection explicitly requests authentication before reading protected characteristics. The backend can reuse an existing bond or request new pairing. Compare and confirm any pairing code through the controller and the adapter/proxy controls. The integration never automatically confirms a code or requests bond removal.
+**This setup form has no PIN-confirmation UI.** Pair the controller with the intended adapter/proxy first. Setup waits for protected notifications while the controller finishes authentication on that same session. It does not initiate pairing, accept codes or request bond removal.
 
 ### Migration
 
@@ -55,7 +55,9 @@ For a local adapter, use a BlueZ agent such as `bluetoothctl` on the machine own
 
 For ESPHome, follow the official [BLE Client numeric-comparison documentation](https://esphome.io/components/ble_client/) and [Bluetooth proxy requirements](https://esphome.io/components/bluetooth_proxy/). Firmware must support the pairing interaction. An established Panasonic configuration uses `esp32_ble.io_capability: display_yes_no`, a `ble_client` with `auto_connect: false`, `on_numeric_comparison_request`, and a deliberately invoked `ble_client.numeric_comparison_reply` action. Verify the PIN before accepting it. Do not blindly accept unsolicited requests or keep a firmware BLE client connected while HA needs the proxy slot.
 
-From 0.2.2, the integration calls the public Bleak `pair()` API after GATT connection and waits for completion before notification subscription. Authentication has a separate 60-second deadline. A failed authentication on the remembered source is reported directly instead of pairing unrelated fallback adapters. On capable ESPHome firmware, an existing bond can be used to establish the protected session. A missing/invalid bond can require a new manual comparison/confirmation. This is not a universal HA PIN-confirmation UI. The integration never automatically accepts a code, requests bond removal, flashes firmware or invokes custom proxy actions.
+From 0.2.2, security-related notification errors keep the existing link alive while authentication finishes, with a 60-second subscription/security deadline. The component does not call `pair()` on every reconnect. Other notification errors fail normally. A failed authentication on the remembered source is reported directly instead of probing unrelated adapters.
+
+Teardown has a 30-second deadline, allowing the backend's 20-second disconnect response and 5-second slot settlement. A still-connected client remains owned after cleanup fails. Reconnect, setup retries and config-flow retries must close that client before creating a replacement. Unload reports failure if the session is still live.
 
 ## Diagnostics
 

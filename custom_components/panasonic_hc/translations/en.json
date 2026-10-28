@@ -7,7 +7,7 @@
         "data": {
           "mac": "MAC address"
         },
-        "description": "Select your Panasonic controller from nearby Bluetooth devices, or enter its MAC address. The connection must authenticate before status is read. If a pairing code appears, compare it with the controller and confirm through your adapter or proxy pairing controls."
+        "description": "Select your Panasonic controller from nearby Bluetooth devices, or enter its MAC address. Pair it with the connecting adapter or proxy first. Setup waits for the controller to finish authenticating the existing session; it does not initiate pairing or automatically confirm a code."
       },
       "init": {
         "title": "Connect Panasonic H&C Bluetooth",
@@ -48,7 +48,7 @@
   "services": {
     "reconnect": {
       "name": "Reconnect Bluetooth",
-      "description": "Reconnect the selected controller, preferring its last working Bluetooth source, and authenticate before reading status. Does not request bond removal or change HVAC settings. A missing bond may require manual pairing confirmation.",
+      "description": "Close the old controller session before reconnecting, prefer its last working Bluetooth source, and wait for protected notifications. Does not initiate pairing, request bond removal, restart a proxy or change HVAC settings.",
       "fields": {
         "entry_id": {
           "name": "Integration entry",
