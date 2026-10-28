@@ -2,6 +2,8 @@
 
 ## 0.2.2
 
+- Isolate the additional IDF 5.5.6 RAM bond-key loss with a native protected-GATT test; include a scoped firmware patch, actual C regression and durable per-device build instructions. Integration changes alone do not fix that SDK defect.
+
 - Retain ownership of live BLE clients when cleanup fails; block overlapping reconnect, setup and flow attempts until teardown completes.
 - Allow 30 seconds for backend disconnect and slot settlement instead of cancelling cleanup after 10 seconds.
 - Wait on the same session when protected notification subscription reports pending authentication/encryption. Do not force pairing on every reconnect.

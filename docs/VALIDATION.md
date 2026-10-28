@@ -1,27 +1,46 @@
 # Validation
 
-## 0.2.2 candidate — 2026-10-28, unresolved hardware validation
+## 0.2.2 candidate — 2026-10-28
 
-- Current target environment: HA 2026.10.4, ESPHome 2026.10.1, ESP-IDF 5.5.6.
-- 140 automated tests pass. Ruff lint/format, mypy and whitespace checks pass.
-- Confirmed lifecycle defects: failed teardown could lose ownership of a live client, and
-  a new attempt could overlap incomplete cleanup. Regression tests cover these failures.
-- A controlled HA attempt started with one stored Panasonic bond, requested numeric
-  comparison again, then timed out without confirmation. The proxy subsequently reported
-  zero bonds. No component `pair()` or `unpair()` call was made during this attempt.
-- The connection dropped during the security wait. Its generic disconnect error hid the
-  preceding ATT authentication error and allowed fallback to other adapters. The candidate
-  now preserves that cause and stops fallback on the remembered source. Both disconnect
-  timings (between retries and during a notify call) have regression coverage.
-- Security retry spacing increased from 0.5 to 3 seconds to reduce repeated rejected writes.
-- The owner's direct proxy test required one pairing code and maintained a connection over
-  reconnect/reboot. Its configured client performs connection/service discovery only, with
-  no protected characteristic access. Reuse of encryption keys after reconnect still needs
-  an independent security test before concluding the integration alone triggers re-pairing.
-- An earlier `Deleting unpaired device` SDK message did not remove the NVS bond in a measured
-  case. It must not be used alone as proof of persistent bond deletion.
-- The Panasonic entry is disabled after the failed controlled attempt. Bluetooth adapters
-  remain enabled. No stable release or merged fix is claimed for this candidate.
+- Environment: HA 2026.10.4, ESPHome 2026.10.1, IDF 5.5.6, CZ-RTC6BLW.
+- 140 automated integration tests pass. Ruff lint/format, mypy and whitespace
+  checks pass. CI also executes the actual extracted SDK handler as a C regression.
+- Confirmed integration fixes: retain live-client ownership after failed teardown,
+  block overlapping replacement, allow the backend disconnect/settlement budget,
+  preserve authentication errors on link drop and stop fallback from the bonded
+  preferred source after such an error. No component pair/unpair calls are made.
+- Earlier HA tests lost authentication with a still-present NVS bond, then lost
+  that NVS bond after an unanswered SMP timeout. The independent native test below
+  isolates an SDK cause. A `Deleting unpaired device` log alone is not proof that
+  NVS was deleted.
+
+### Independent firmware reproduction and fix
+
+The HA Panasonic entry remained disabled throughout these native tests.
+
+- Original IDF: after reboot, authentication succeeds (type 1, mode 13) and the
+  protected CCCD enable/disable responses both have status 0. After ordinary native
+  disconnect/connect, a new comparison code appears and that CCCD write returns
+  status 5. NVS still contains the bond before the SMP timeout, then has none.
+- SDK root: `smp_check_auth_req()` clears RAM keys on encryption using an existing
+  bond. The subsequent session cannot find usable RAM keys. The extracted actual
+  C function reproduces this; gating replacement on `SMP_PAIR_FLAG_ENC_AFTER_PAIR`
+  preserves reused keys while keeping successful new-pair replacement intact.
+- Patched image: after one manual pairing, three consecutive native reconnects
+  authenticate without a comparison code. Every protected CCCD enable/disable
+  returns status 0, and NVS retains one target bond.
+- A second OTA build uses a YAML per-device `bt` component override. A normal
+  ESPHome compile succeeds and compile_commands identifies the patched SMP source.
+  The shared SDK file SHA256 remains unchanged. After that image's reboot, NVS
+  retains the bond, authentication succeeds and both protected writes return 0.
+- The target config disables automatic central-role NVS bond removal on pairing
+  failure. Encryption, numeric comparison and hardened repairing remain enabled.
+- No bootloader, partition table, NVS image or unrelated adapter was flashed.
+  The old application image is retained for rollback.
+
+Final component readiness/reconnect and release status are recorded after the
+live HA validation. Native protected writes alone do not prove Panasonic status
+exchange, every HVAC command, compressor operation or long-term uptime.
 
 ## 0.2.1 — adding after deletion and route fallback
 

@@ -59,6 +59,16 @@ From 0.2.2, security-related notification errors keep the existing link alive wh
 
 Teardown has a 30-second deadline, allowing the backend's 20-second disconnect response and 5-second slot settlement. A still-connected client remains owned after cleanup fails. Reconnect, setup retries and config-flow retries must close that client before creating a replacement. Unload reports failure if the session is still live.
 
+### ESP32 bond reuse on IDF 5.5.6
+
+An independent native ESPHome client reproduced a firmware defect where the
+first encrypted connection works, the next reconnect requests pairing again,
+and an unanswered timeout can remove the NVS bond. Integration retries alone
+cannot repair this. A targeted IDF 5.5.6 fix, C regression test, native protected
+GATT probe and per-device build override are in [proxy security tools](tools/proxy_security/README.md).
+See [validation](docs/VALIDATION.md) for the tested hardware boundary. This
+workaround must be reviewed before changing the pinned framework version.
+
 ## Diagnostics
 
 Download diagnostics from the integration page for connection stage, attempts, malformed packets, rejected temperature samples, failed commands, measurement ages and route candidates (RSSI/failures/free slots). MAC addresses, scanner names and raw frames are omitted. Authentication attempts and the last failed connection stage are also included. Candidate routes are not proof of the currently connected route; inspect HA Bluetooth logs for the actual selection.
@@ -76,6 +86,7 @@ pip install '.[test]'
 ruff check .
 ruff format --check .
 mypy
+python tools/proxy_security/test_sdk_bond_reuse.py
 pytest -q --cov=custom_components.panasonic_hc --cov-report=term-missing
 ```
 

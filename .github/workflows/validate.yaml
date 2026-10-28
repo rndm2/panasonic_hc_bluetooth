@@ -18,6 +18,7 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy
+      - run: python tools/proxy_security/test_sdk_bond_reuse.py
       - run: pytest -q --cov=custom_components.panasonic_hc --cov-report=term-missing
   hacs:
     runs-on: ubuntu-latest
