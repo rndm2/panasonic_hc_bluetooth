@@ -1,5 +1,28 @@
 # Validation
 
+## 0.2.2 candidate — 2026-10-28, unresolved hardware validation
+
+- Current target environment: HA 2026.10.4, ESPHome 2026.10.1, ESP-IDF 5.5.6.
+- 140 automated tests pass. Ruff lint/format, mypy and whitespace checks pass.
+- Confirmed lifecycle defects: failed teardown could lose ownership of a live client, and
+  a new attempt could overlap incomplete cleanup. Regression tests cover these failures.
+- A controlled HA attempt started with one stored Panasonic bond, requested numeric
+  comparison again, then timed out without confirmation. The proxy subsequently reported
+  zero bonds. No component `pair()` or `unpair()` call was made during this attempt.
+- The connection dropped during the security wait. Its generic disconnect error hid the
+  preceding ATT authentication error and allowed fallback to other adapters. The candidate
+  now preserves that cause and stops fallback on the remembered source. Both disconnect
+  timings (between retries and during a notify call) have regression coverage.
+- Security retry spacing increased from 0.5 to 3 seconds to reduce repeated rejected writes.
+- The owner's direct proxy test required one pairing code and maintained a connection over
+  reconnect/reboot. Its configured client performs connection/service discovery only, with
+  no protected characteristic access. Reuse of encryption keys after reconnect still needs
+  an independent security test before concluding the integration alone triggers re-pairing.
+- An earlier `Deleting unpaired device` SDK message did not remove the NVS bond in a measured
+  case. It must not be used alone as proof of persistent bond deletion.
+- The Panasonic entry is disabled after the failed controlled attempt. Bluetooth adapters
+  remain enabled. No stable release or merged fix is claimed for this candidate.
+
 ## 0.2.1 — adding after deletion and route fallback
 
 - Reproduced the pre-fix `cannot_connect` through HA's native config-flow API: local GATT connection succeeded but readiness failed while a bonded proxy was available.

@@ -290,3 +290,45 @@ async def test_flow_retry_cannot_replace_live_validation_controller(device):
         assert await flow._validate_connection() == "cannot_connect"
     constructor.assert_not_called()
     assert flow._validation_controller is previous
+
+
+@pytest.mark.parametrize("disconnect_during_retry", [False, True])
+async def test_security_disconnect_preserves_cause_and_does_not_try_other_adapters(
+    thermostat, connected, disconnect_during_retry
+):
+    from custom_components.panasonic_hc.errors import PanasonicAuthenticationError
+
+    security_error = BleakError("Insufficient authentication")
+    calls = 0
+
+    async def subscribe(*args):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            if not disconnect_during_retry:
+                connected.is_connected = False
+            raise security_error
+        connected.is_connected = False
+        raise BleakError("Not connected")
+
+    async def establish(*args, route_policy, **kwargs):
+        route_policy.selected = "BONDED_PROXY"
+        route_policy.candidates = {"BONDED_PROXY", "OTHER_ADAPTER"}
+        return connected
+
+    connected.start_notify.side_effect = subscribe
+    thermostat.transport.client = None
+    thermostat.transport.routes.preferred = "BONDED_PROXY"
+    thermostat.ready = False
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection", side_effect=establish
+    ) as create:
+        with pytest.raises(
+            PanasonicAuthenticationError, match="Insufficient authentication"
+        ) as exc:
+            await thermostat.async_connect()
+    assert exc.value.__cause__ is security_error
+    create.assert_awaited_once()
+    assert thermostat.transport.last_failure_stage == "authenticating"
+    connected.pair.assert_not_awaited()
+    connected.unpair.assert_not_called()

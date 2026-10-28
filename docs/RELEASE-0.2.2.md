@@ -6,4 +6,4 @@ Protected notification errors wait for authentication on the existing connection
 
 Route errors retain their original causes, known exhaustion returns promptly, and diagnostics report the failed stage and pending teardown. The running poller backs off repeated security failures. Domain, device and entity identity remain unchanged.
 
-Validation: 138 tests against HA 2026.10.4, Ruff and mypy. See VALIDATION.md for hardware results and remaining limits. Restart Home Assistant after installing.
+Validation: 140 tests against HA 2026.10.4, Ruff and mypy. See VALIDATION.md for hardware results and remaining limits. Restart Home Assistant after installing.

@@ -11,6 +11,6 @@ Review findings and regressions:
 - Unload must not report success while the transport still owns a live link. Flow validation likewise retains pending cleanup between retries.
 - Exceptions retain their route and non-empty causes. Known candidate exhaustion avoids the extra empty timeout. Expected security failures use dedicated UI messages and worker backoff.
 
-138 tests pass against HA 2026.10.4. Coverage, Ruff and mypy are checked separately before release. The tests include wrapped ATT errors, timeout/cancellation, same-session subscription retries, concurrent teardown/connect, failed setup/flow/unload, no automatic pair/unpair, stable identities and existing command behavior.
+140 tests pass against HA 2026.10.4. Coverage, Ruff and mypy are checked separately before release. The tests include wrapped ATT errors, timeout/cancellation, same-session subscription retries, concurrent teardown/connect, failed setup/flow/unload, no automatic pair/unpair, stable identities and existing command behavior.
 
 Hardware validation is recorded in VALIDATION.md. The private HA route-selection hooks remain a compatibility dependency. A valid GATT connection or authentication log alone does not prove persistent bonding, successful Panasonic status exchange or physical compressor behavior.

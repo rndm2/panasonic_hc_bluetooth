@@ -22,7 +22,7 @@ CONNECT_TIMEOUT = 25
 # ESPHome may spend 20 seconds awaiting disconnect and 5 settling the slot.
 DISCONNECT_TIMEOUT = 30
 AUTHENTICATION_TIMEOUT = 60
-SECURITY_RETRY_INTERVAL = 0.5
+SECURITY_RETRY_INTERVAL = 3
 NOTIFY_SETTLE_DELAY = 0.5
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,6 +88,14 @@ class BLETransport:
                     "this adapter or proxy; automatic pairing was not requested."
                 ) from security_error
             raise BleakError("Timed out subscribing to controller notifications") from err
+        except BleakError:
+            self.last_failure_stage = "authenticating" if security_error else "subscribing"
+            if security_error is not None and not client.is_connected:
+                raise PanasonicAuthenticationError(
+                    "Controller disconnected while authenticating the existing "
+                    f"Bluetooth session: {describe_error(security_error)}"
+                ) from security_error
+            raise
         except BaseException:
             self.last_failure_stage = "authenticating" if security_error else "subscribing"
             raise

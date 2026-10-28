@@ -6,6 +6,7 @@
 - Allow 30 seconds for backend disconnect and slot settlement instead of cancelling cleanup after 10 seconds.
 - Wait on the same session when protected notification subscription reports pending authentication/encryption. Do not force pairing on every reconnect.
 - Preserve individual route failure reasons and stop immediately when known candidates are exhausted.
+- Preserve pending authentication errors when the link drops, preventing fallback from the remembered source to unpaired adapters. Space rejected security subscription retries three seconds apart.
 - Add actionable security errors, bounded security waits, running-poller backoff, and teardown/connection diagnostics.
 - Add regressions demonstrating the previous live-client ownership and overlapping reconnect defects, plus security-wait, cancellation and lifecycle guards.
 
