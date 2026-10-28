@@ -12,13 +12,16 @@ from .connection import PanasonicBleakClient, RoutePolicy
 from .errors import (
     PanasonicAuthenticationError,
     PanasonicHCException,
+    PanasonicSourceUnavailable,
     describe_error,
     is_authentication_error,
+    is_source_unavailable,
 )
 
 BLE_CHAR_WRITE = "4d200002-eff3-4362-b090-a04cab3f1da0"
 BLE_CHAR_NOTIFY = "4d200003-eff3-4362-b090-a04cab3f1da0"
 CONNECT_TIMEOUT = 25
+SOURCE_READY_RETRY_INTERVAL = 0.5
 # ESPHome may spend 20 seconds awaiting disconnect and 5 settling the slot.
 DISCONNECT_TIMEOUT = 30
 AUTHENTICATION_TIMEOUT = 60
@@ -112,15 +115,36 @@ class BLETransport:
         self.last_failure_stage = None
         try:
             self.device = self._resolve()
-            async with asyncio.timeout(CONNECT_TIMEOUT):
-                self.client = await establish_connection(
-                    PanasonicBleakClient,
-                    self.device,
-                    self.device.name or self.device.address,
-                    disconnected_callback=self._disconnected,
-                    max_attempts=1,
-                    route_policy=self.routes,
-                )
+            waiting_for_source: BleakError | None = None
+            try:
+                async with asyncio.timeout(CONNECT_TIMEOUT):
+                    while True:
+                        waiting_for_source = None
+                        try:
+                            self.client = await establish_connection(
+                                PanasonicBleakClient,
+                                self.device,
+                                self.device.name or self.device.address,
+                                disconnected_callback=self._disconnected,
+                                max_attempts=1,
+                                route_policy=self.routes,
+                            )
+                        except BleakError as err:
+                            if not is_source_unavailable(err):
+                                raise
+                            # The selection hook raised before allocating a backend.
+                            # Wait through slot-release/API races without changing source.
+                            waiting_for_source = err
+                            await asyncio.sleep(SOURCE_READY_RETRY_INTERVAL)
+                        else:
+                            break
+            except TimeoutError:
+                if waiting_for_source is not None:
+                    raise PanasonicSourceUnavailable(
+                        "The paired Bluetooth source did not become available "
+                        f"within {CONNECT_TIMEOUT} seconds"
+                    ) from waiting_for_source
+                raise
             client = self.client
 
             def received(_handle, data: bytearray) -> None:

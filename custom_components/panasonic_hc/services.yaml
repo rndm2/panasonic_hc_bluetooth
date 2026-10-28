@@ -5,3 +5,7 @@ reconnect:
       selector:
         config_entry:
           integration: panasonic_hc
+    reset_route:
+      default: false
+      selector:
+        boolean:

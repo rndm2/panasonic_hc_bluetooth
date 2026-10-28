@@ -13,6 +13,8 @@ from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 from habluetooth import HaBleakClientWrapper
 
+from .errors import PanasonicSourceUnavailable
+
 
 @dataclass
 class RoutePolicy:
@@ -26,14 +28,23 @@ class PanasonicBleakClient(HaBleakClientWrapper):
     """Extend only this client's route selection, not HA's shared manager."""
 
     def __init__(self, device: BLEDevice, *, route_policy: RoutePolicy, **kwargs: Any) -> None:
-        if not hasattr(HaBleakClientWrapper, "_async_get_backend_for_ble_device"):
+        if not all(
+            hasattr(HaBleakClientWrapper, name)
+            for name in (
+                "_async_get_backend_for_ble_device",
+                "_async_get_best_available_backend_and_device",
+            )
+        ):
             raise BleakError("This HA Bluetooth version lacks the route-selection extension")
         self._route_policy = route_policy
         self._target_address = device.address
         super().__init__(device, **kwargs)
 
     def _async_get_backend_for_ble_device(self, manager, scanner, ble_device):
-        if scanner.source in self._route_policy.excluded:
+        if scanner.source in self._route_policy.excluded or (
+            self._route_policy.preferred is not None
+            and scanner.source != self._route_policy.preferred
+        ):
             return None
         backend = super()._async_get_backend_for_ble_device(manager, scanner, ble_device)
         if backend is not None:
@@ -42,15 +53,22 @@ class PanasonicBleakClient(HaBleakClientWrapper):
 
     def _async_get_best_available_backend_and_device(self, manager):
         paths = manager.async_scanner_devices_by_address(self._target_address, True)
-        self._route_policy.candidates = {path.scanner.source for path in paths}
         preferred = self._route_policy.preferred
-        if preferred is not None and preferred not in self._route_policy.excluded:
-            for path in paths:
-                if path.scanner.source == preferred:
-                    backend = self._async_get_backend_for_ble_device(
-                        manager, path.scanner, path.ble_device
-                    )
-                    if backend is not None:
-                        return backend
-        # Preserve HA's scoring and slot checks for all remaining candidates.
+        self._route_policy.candidates = (
+            {preferred} if preferred is not None else {path.scanner.source for path in paths}
+        )
+        if preferred is not None:
+            if preferred not in self._route_policy.excluded:
+                for path in paths:
+                    if path.scanner.source == preferred:
+                        backend = self._async_get_backend_for_ble_device(
+                            manager, path.scanner, path.ble_device
+                        )
+                        if backend is not None:
+                            return backend
+            raise PanasonicSourceUnavailable(
+                "The paired Bluetooth adapter or proxy is unavailable or busy; "
+                "waiting for the same source to return"
+            )
+        # Initial setup or explicit route reset uses HA scoring and slot checks.
         return super()._async_get_best_available_backend_and_device(manager)

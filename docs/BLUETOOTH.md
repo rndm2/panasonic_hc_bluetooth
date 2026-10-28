@@ -40,3 +40,14 @@ A confirmed lifecycle defect was the 10-second cleanup deadline versus ESPHome's
 Known exhausted routes stop immediately instead of burning another selection timeout. Error summaries preserve the individual causes. Diagnostics expose the failed stage and pending teardown without keys or raw frames. The running worker coalesces outage logs and backs off security failures; HA owns initial setup scheduling.
 
 Temporary proxy diagnostics report only bond metadata. The manual proxy client needed its known static-random peer address type set correctly. The diagnostic firmware has no automatic confirmation or bond removal. SDK/build inspection confirmed bonding storage is enabled; current key presence was measured rather than inferred from an auth-success log.
+
+
+## Production recovery from 0.2.3
+
+The saved source identifies the adapter/proxy whose Panasonic handshake actually
+succeeded. It is retained while that source is missing or busy and on readiness
+failure. Automatic reconnect never probes an unknown source after one is saved.
+Initial setup and the explicit `reset_route: true` Reconnect action retain the
+route search. Both private HA selection hooks are checked before allocating slots.
+The reset changes routing metadata only and does not pair/unpair or change entity
+identity. Unrelated Bluetooth adapters stay enabled.

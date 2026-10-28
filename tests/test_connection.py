@@ -66,14 +66,18 @@ def test_confirmed_proxy_preferred_over_stronger_local():
 
 
 @pytest.mark.parametrize("missing", [False, True])
-def test_unavailable_preferred_source_falls_back_to_free_path(missing):
+def test_unavailable_paired_source_never_uses_an_unknown_adapter(missing):
     busy = route("PREFERRED", -50, remote=True, free=False)
     alternate = route("ALTERNATE", -80, remote=True)
     paths = [alternate] if missing else [busy, alternate]
     policy = RoutePolicy(preferred="PREFERRED")
     client, manager = client_for(paths, policy)
-    assert client._async_get_best_available_backend_and_device(manager).scanner is alternate.scanner
-    assert policy.selected == "ALTERNATE"
+    with pytest.raises(BleakError, match="paired Bluetooth adapter or proxy"):
+        client._async_get_best_available_backend_and_device(manager)
+    assert policy.selected is None
+    assert policy.candidates == {"PREFERRED"}
+    alternate.scanner.connector.can_connect.assert_not_called()
+    manager.async_allocate_connection_slot.assert_not_called()
 
 
 def test_all_excluded_routes_allocate_nothing():
@@ -84,4 +88,63 @@ def test_all_excluded_routes_allocate_nothing():
     with pytest.raises(BleakError, match="No backend"):
         client._async_get_best_available_backend_and_device(manager)
     assert policy.selected is None
+    manager.async_allocate_connection_slot.assert_not_called()
+
+
+def test_direct_backend_selection_cannot_bypass_paired_source():
+    local, proxy = route("LOCAL", -40), route("PROXY", -85, remote=True)
+    client, manager = client_for([local, proxy], RoutePolicy(preferred="PROXY"))
+    assert (
+        client._async_get_backend_for_ble_device(manager, local.scanner, local.ble_device) is None
+    )
+    manager.async_allocate_connection_slot.assert_not_called()
+
+
+def test_explicit_route_reset_allows_a_different_paired_source():
+    proxy = route("NEW_PROXY", -60, remote=True)
+    policy = RoutePolicy(preferred="OLD_PROXY")
+    client, manager = client_for([proxy], policy)
+    with pytest.raises(BleakError):
+        client._async_get_best_available_backend_and_device(manager)
+    policy.preferred = None
+    assert client._async_get_best_available_backend_and_device(manager).scanner is proxy.scanner
+
+
+@pytest.mark.parametrize(
+    "hook", ["_async_get_backend_for_ble_device", "_async_get_best_available_backend_and_device"]
+)
+def test_unsupported_ha_route_hooks_fail_before_allocating_any_slot(monkeypatch, hook):
+    from habluetooth import HaBleakClientWrapper
+
+    monkeypatch.delattr(HaBleakClientWrapper, hook)
+    with pytest.raises(BleakError, match="lacks the route-selection extension"):
+        client_for([route("PROXY", -50, remote=True)], RoutePolicy(preferred="PROXY"))
+
+
+async def test_real_retry_connector_preserves_source_readiness_error():
+    from unittest.mock import AsyncMock
+
+    from bleak_retry_connector import establish_connection
+
+    from custom_components.panasonic_hc.errors import is_source_unavailable
+
+    alternate = route("UNPAIRED", -40, remote=True)
+    manager = Mock(shutdown=False)
+    manager.async_scanner_devices_by_address.return_value = [alternate]
+    with (
+        patch("habluetooth.wrappers.get_manager", return_value=manager),
+        patch("bleak_retry_connector.get_connected_devices", AsyncMock(return_value=[])),
+        patch("bleak_retry_connector._has_valid_services_in_cache", AsyncMock(return_value=False)),
+        patch("bleak_retry_connector.wait_for_disconnect", AsyncMock()),
+    ):
+        with pytest.raises(BleakError) as caught:
+            await establish_connection(
+                PanasonicBleakClient,
+                alternate.ble_device,
+                "Controller",
+                route_policy=RoutePolicy(preferred="PAIRED"),
+                max_attempts=1,
+            )
+    assert is_source_unavailable(caught.value)
+    alternate.scanner.connector.can_connect.assert_not_called()
     manager.async_allocate_connection_slot.assert_not_called()

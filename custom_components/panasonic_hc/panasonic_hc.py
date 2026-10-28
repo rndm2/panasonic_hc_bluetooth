@@ -136,12 +136,8 @@ class PanasonicHC:
                                 f"{stage}: {describe_error(err)}"
                             )
                             await self.async_disconnect()
-                            if (
-                                isinstance(err, PanasonicAuthenticationError)
-                                and failed_source is not None
-                                and failed_source == routes.preferred
-                            ):
-                                # A different adapter cannot repair this peer's bond.
+                            if failed_source is not None and failed_source == routes.preferred:
+                                # A bond belongs to its source. Changing it requires an explicit route reset.
                                 raise
                             if failed_source is None or failed_source in routes.excluded:
                                 raise

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.3
+
+- Keep reconnect on the saved paired source while it is offline, busy or fails readiness. Initial setup still searches available routes.
+- Wait through a short saved-source readiness/slot-release window within the existing connect deadline, without switching adapters or retrying arbitrary connection errors.
+- Add an explicit Search Bluetooth routes again option to Reconnect for deliberate source changes.
+- Check both required HA route-selection hooks before allocating connections.
+- Prepare only the patched bt component with a pinned source fingerprint, atomic output, recorded provenance and SDK license. Preserve unknown/modified existing output.
+- Document removal of temporary firmware diagnostics, normal INFO logging, upgrade/rollback procedure and production validation.
+
 ## 0.2.2
 
 - Isolate the additional IDF 5.5.6 RAM bond-key loss with a native protected-GATT test; include a scoped firmware patch, actual C regression and durable per-device build instructions. Integration changes alone do not fix that SDK defect.

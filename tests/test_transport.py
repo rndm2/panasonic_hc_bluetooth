@@ -567,3 +567,24 @@ async def test_total_deadline_does_not_hide_earlier_route_error(thermostat):
     ):
         with pytest.raises(PanasonicHCException, match="original route failure"):
             await thermostat.async_connect()
+
+
+async def test_known_source_readiness_failure_does_not_probe_unpaired_adapters(
+    thermostat, connected
+):
+    connected.start_notify.side_effect = BleakError("Controller disconnected")
+    thermostat.transport.client = None
+    thermostat.ready = False
+    thermostat.transport.routes.preferred = "PAIRED"
+
+    async def establish(*args, route_policy, **kwargs):
+        route_policy.selected = "PAIRED"
+        route_policy.candidates = {"PAIRED", "UNPAIRED"}
+        return connected
+
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection", side_effect=establish
+    ) as create:
+        with pytest.raises(PanasonicHCException, match="Controller disconnected"):
+            await thermostat.async_connect()
+    create.assert_awaited_once()

@@ -52,6 +52,13 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             raise HomeAssistantError("A reconnect is already in progress")
         reconnecting.add(entry_id)
         try:
+            if call.data.get("reset_route", False):
+                hass.config_entries.async_update_entry(
+                    entry,
+                    data={
+                        key: value for key, value in entry.data.items() if key != "preferred_source"
+                    },
+                )
             if not await hass.config_entries.async_reload(entry_id):
                 raise HomeAssistantError(
                     translation_domain=DOMAIN, translation_key="reconnect_failed"
@@ -63,7 +70,12 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         DOMAIN,
         "reconnect",
         reconnect,
-        schema=probatio.Schema({probatio.Required("entry_id"): str}),
+        schema=probatio.Schema(
+            {
+                probatio.Required("entry_id"): str,
+                probatio.Optional("reset_route", default=False): cv.boolean,
+            }
+        ),
     )
     return True
 
