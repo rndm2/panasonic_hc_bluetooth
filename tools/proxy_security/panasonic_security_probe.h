@@ -12,7 +12,7 @@ class PanasonicSecurityProbe : public esphome::ble_client::BLEClientNode {
   }
 
   void start() {
-    if (pending_ || cccd_ == 0 || parent()->state() != esphome::esp32_ble_tracker::ClientState::ESTABLISHED) {
+    if (pending_ || blocked_ || cccd_ == 0 || parent()->state() != esphome::esp32_ble_tracker::ClientState::ESTABLISHED) {
       ESP_LOGW("panasonic_security", "Protected CCCD test refused: ready=%d pending=%d handle=%u",
                parent()->state() == esphome::esp32_ble_tracker::ClientState::ESTABLISHED, pending_, cccd_);
       return;
@@ -24,6 +24,7 @@ class PanasonicSecurityProbe : public esphome::ble_client::BLEClientNode {
     if (pending_ && esphome::millis() - started_ >= 10000) {
       ESP_LOGW("panasonic_security", "Protected CCCD test timed out, phase=%u", phase_);
       pending_ = false;
+      blocked_ = true;  // A late completion must not be assigned to a new test.
     }
   }
 
@@ -31,6 +32,7 @@ class PanasonicSecurityProbe : public esphome::ble_client::BLEClientNode {
                            esp_ble_gattc_cb_param_t *param) override {
     if (event == ESP_GATTC_SEARCH_CMPL_EVT) {
       cccd_ = 0;
+      blocked_ = false;
       if (param->search_cmpl.status == ESP_GATT_OK) {
         using esphome::esp32_ble_tracker::ESPBTUUID;
         esp_gattc_char_elem_t characteristic{};
@@ -57,6 +59,7 @@ class PanasonicSecurityProbe : public esphome::ble_client::BLEClientNode {
     } else if (event == ESP_GATTC_CLOSE_EVT || event == ESP_GATTC_DISCONNECT_EVT) {
       if (pending_) ESP_LOGW("panasonic_security", "Protected CCCD test aborted by disconnect");
       pending_ = false;
+      blocked_ = false;
       cccd_ = 0;
     }
   }
@@ -78,6 +81,7 @@ class PanasonicSecurityProbe : public esphome::ble_client::BLEClientNode {
   uint16_t conn_id_{0};
   uint8_t phase_{0};
   bool pending_{false};
+  bool blocked_{false};
   uint32_t started_{0};
 };
 

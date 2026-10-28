@@ -60,7 +60,7 @@ setup, and invoke `start()` from an explicit API action. It discovers the
 notification UUID and CCCD, enables it with a write response, logs the controller's
 actual completion status, then restores the CCCD. No pairing, bond removal,
 auto-connect or HVAC commands are performed. The pending operation is bounded
-to ten seconds.
+to ten seconds. After a timeout it refuses another test until reconnect, so a late completion cannot be mistaken for a newer operation.
 
 A local submission result of zero does not establish success. The evidence is
 `Protected CCCD write completed: enable=1 status=0`, followed by successful

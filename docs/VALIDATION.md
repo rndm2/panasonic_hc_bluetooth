@@ -38,9 +38,22 @@ The HA Panasonic entry remained disabled throughout these native tests.
 - No bootloader, partition table, NVS image or unrelated adapter was flashed.
   The old application image is retained for rollback.
 
-Final component readiness/reconnect and release status are recorded after the
-live HA validation. Native protected writes alone do not prove Panasonic status
-exchange, every HVAC command, compressor operation or long-term uptime.
+### HA component validation
+
+- Deployed the final transport with a previous-source SHA256 guard. `ha core check`
+  passed and HA Core restarted successfully.
+- Enabled the existing entry after closing only the native test client. It loaded
+  on the intended proxy, authenticated without a new code and returned Panasonic
+  status. The existing climate entity reports cool, target/current 24.5 degrees,
+  fan auto and eco. No HVAC setting commands were sent in this investigation.
+- `panasonic_hc.reconnect` successfully reloaded the same entry, authenticated with
+  the existing bond and restored status.
+- Restarted only the target proxy with the integration active. The entry recovered
+  automatically in approximately 13 seconds. NVS retained one target bond and the
+  climate returned valid status/current temperature. One expected outage warning
+  recorded attempts through other adapters while the preferred proxy was offline.
+- These are bounded reconnect/reboot checks. They do not establish long-term uptime,
+  every HVAC command, other controller/SDK versions or physical compressor behavior.
 
 ## 0.2.1 — adding after deletion and route fallback
 
