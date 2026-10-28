@@ -24,11 +24,23 @@ The extracted SDK fixture retains its Apache-2.0 attribution in the source and
 
 ## Isolated firmware build
 
-`prepare_sdk_patch.py` creates an isolated IDF tree and replaces only the SMP
-source file. It verifies that the shared SDK source remains unchanged. Its default
-paths target the ESPHome add-on's IDF 5.5.6 installation and `/data` build storage.
-Run it inside that add-on alongside `sdk_bond_fix.py`, after reviewing the paths.
-It does not upload firmware, restart a device, access credentials or remove bonds.
+`prepare_sdk_patch.py` checks the exact tested SMP source SHA256, copies only the
+`bt` component to isolated storage and patches that copy. A failed preparation
+leaves no partial production artifact. Existing mismatched SMP output is refused,
+not overwritten. The manifest records the original/patched source fingerprints and
+the artifact includes the SDK license. The shared SDK is never changed.
+
+Run it inside the ESPHome add-on alongside `sdk_bond_fix.py`:
+
+```sh
+python3 prepare_sdk_patch.py \
+  --sdk-root /root/.cache/esphome/idf/frameworks/5.5.6 \
+  --output /data/panasonic-idf-5.5.6-bond-reuse
+```
+
+Review those paths for your installation. The script does not upload firmware,
+restart a device, access credentials or remove bonds. Production firmware needs
+the `bt` artifact and SDK config below, not a complete second SDK tree.
 
 Use the corrected `bt` component through the target device's YAML so a normal
 future ESPHome build retains the fix:
@@ -53,6 +65,10 @@ before upgrading the framework. Do not silently reuse this component with a
 different IDF version.
 
 ## Independent protected-GATT check
+
+This optional development fixture is not included in production firmware.
+Its manual API actions and header can be installed temporarily for investigation,
+then removed. Normal production logging can stay at INFO.
 
 `panasonic_security_probe.h` is a diagnostic `BLEClientNode`. Include it in the
 ESPHome config, construct `PanasonicSecurityProbe(id(your_ble_client))` once after

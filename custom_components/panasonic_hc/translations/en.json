@@ -48,11 +48,15 @@
   "services": {
     "reconnect": {
       "name": "Reconnect Bluetooth",
-      "description": "Close the old controller session before reconnecting, prefer its last working Bluetooth source, and wait for protected notifications. Does not initiate pairing, request bond removal, restart a proxy or change HVAC settings.",
+      "description": "Close the old controller session and reconnect through its paired Bluetooth source. To move to a different paired adapter or proxy, enable Search Bluetooth routes again.",
       "fields": {
         "entry_id": {
           "name": "Integration entry",
           "description": "Panasonic controller to reconnect."
+        },
+        "reset_route": {
+          "name": "Search Bluetooth routes again",
+          "description": "Forget the saved Bluetooth source and search available routes. Pair the controller with the intended new adapter or proxy first. Leave off for normal reconnects."
         }
       }
     }

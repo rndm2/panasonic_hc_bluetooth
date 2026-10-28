@@ -6,7 +6,7 @@ Maintained by [Kostiantyn Marianovskyi (@rndm2)](https://github.com/rndm2). Orig
 
 ## Requirements and installation
 
-- Home Assistant **2026.10.0+**, tested with 2026.10.0 and Python 3.14.
+- Home Assistant **2026.10.0+**, tested with 2026.10.4 and Python 3.14.
 - A connectable local Bluetooth adapter or active ESPHome Bluetooth proxy.
 - The controller must be paired with the adapter/proxy that connects to it.
 - CZ-RTC6BLW is the tested model. Other `CZ-RTC6*` models are not verified.
@@ -37,15 +37,17 @@ There is **no energy accounting**: no Daily Energy sensor, consumption polling, 
 
 ## Reconnect and adapter selection
 
-Press **Reconnect Bluetooth** on the device, or call the `panasonic_hc.reconnect` action and select its integration entry. The action works during setup retries even when the button is unavailable. It reloads only that entry, cancels its worker, closes the old session and requires fresh controller status. It does not restart proxies, change AC settings or remove bonds. Disabled entries and simultaneous reconnect requests are rejected explicitly.
+Press **Reconnect Bluetooth** on the device, or call the `panasonic_hc.reconnect` action and select its integration entry. Normal reconnect keeps the saved paired adapter/proxy. To deliberately move to a different paired source, enable **Search Bluetooth routes again** (`reset_route: true`) in that action; this clears only the saved route, not Bluetooth bonds or device/entity identity. The action works during setup retries even when the button is unavailable. It reloads only that entry, cancels its worker, closes the old session and requires fresh controller status. It does not restart proxies, change AC settings or remove bonds. Disabled entries and simultaneous reconnect requests are rejected explicitly.
 
 HA normally selects the connection path using signal strength, failure history and free slots. A GATT connection can succeed while the Panasonic notification/status handshake fails, so HA's normal scoring alone can repeatedly choose a non-working adapter.
 
-From **0.2.1**, the Panasonic client tries another available route when connection, notification subscription or the first valid status fails. Failed sources are excluded only for that controller's current connection attempt. Other Bluetooth devices and adapters remain enabled and unchanged. Known exhausted routes return immediately, retaining the individual failure reasons. Each route has bounded connection time and the readiness search has a 120-second deadline, followed by bounded cleanup; exhausted routes return a setup/flow error.
+During initial setup or an explicit route reset, the Panasonic client tries available routes until one completes notification subscription and returns valid controller status. Only that status-confirmed source is saved.
 
-A route is remembered only after a valid status reply. The setup flow saves that source in the integration entry; subsequent setup/reconnect prefers it and falls back if it is missing, busy or fails. This preserves strict validation in the UI without treating one failed adapter as proof that the controller is unreachable.
+From **0.2.3**, reconnect stays with the saved source. If it is offline, busy or fails readiness, HA retries that source instead of contacting other adapters whose pairing is unknown. This also applies while the proxy reboots. A stronger advertisement does not move an existing controller to a different adapter. To change sources, pair the new source first and deliberately reset the route through the Reconnect action.
 
-This uses a small, isolated subclass of HA's Bluetooth client and its protected route-selection hooks, tested against HA 2026.10.0. It retains HA's slot accounting and connection lifecycle; it does not monkeypatch shared classes, alter scanner scores, disable adapters or restart proxies. These protected hooks are a compatibility dependency to review on HA upgrades. See [Bluetooth investigation](docs/BLUETOOTH.md).
+Route selection still uses HA's slot accounting and bounded connection/cleanup. First-time discovery retains alternative-route search so one failing local adapter does not prevent setup through a paired proxy. Every other Bluetooth device and adapter remains enabled.
+
+This uses a small, isolated subclass of HA's Bluetooth client and its protected route-selection hooks, tested against HA 2026.10.4. It retains HA's slot accounting and connection lifecycle; it does not monkeypatch shared classes, alter scanner scores, disable adapters or restart proxies. These protected hooks are a compatibility dependency to review on HA upgrades. See [Bluetooth investigation](docs/BLUETOOTH.md).
 
 ## Pairing
 
@@ -53,9 +55,9 @@ Pairing is a separate security exchange between the Panasonic controller and a *
 
 For a local adapter, use a BlueZ agent such as `bluetoothctl` on the machine owning that adapter: scan, select the controller, pair, compare/confirm the displayed PIN, trust it, then disconnect so HA can take over. Exact access depends on the HA installation type.
 
-For ESPHome, follow the official [BLE Client numeric-comparison documentation](https://esphome.io/components/ble_client/) and [Bluetooth proxy requirements](https://esphome.io/components/bluetooth_proxy/). Firmware must support the pairing interaction. An established Panasonic configuration uses `esp32_ble.io_capability: display_yes_no`, a `ble_client` with `auto_connect: false`, `on_numeric_comparison_request`, and a deliberately invoked `ble_client.numeric_comparison_reply` action. Verify the PIN before accepting it. Do not blindly accept unsolicited requests or keep a firmware BLE client connected while HA needs the proxy slot.
+For ESPHome, follow the official [BLE Client numeric-comparison documentation](https://esphome.io/components/ble_client/) and [Bluetooth proxy requirements](https://esphome.io/components/bluetooth_proxy/). Firmware must support the pairing interaction. An established Panasonic configuration uses `esp32_ble.io_capability: display_yes_no`, a `ble_client` with `auto_connect: false`, `on_numeric_comparison_request` (with an INFO log if normal logging is INFO), and a deliberately invoked `ble_client.numeric_comparison_reply` action. Verify the PIN before accepting it. Do not blindly accept unsolicited requests or keep a firmware BLE client connected while HA needs the proxy slot.
 
-From 0.2.2, security-related notification errors keep the existing link alive while authentication finishes, with a 60-second subscription/security deadline. The component does not call `pair()` on every reconnect. Other notification errors fail normally. A failed authentication on the remembered source is reported directly instead of probing unrelated adapters.
+From 0.2.2, security-related notification errors keep the existing link alive while authentication finishes, with a 60-second subscription/security deadline. The component does not call `pair()` on every reconnect. Other notification errors fail normally. Any failed readiness attempt on the saved source is reported directly instead of probing unrelated adapters.
 
 Teardown has a 30-second deadline, allowing the backend's 20-second disconnect response and 5-second slot settlement. A still-connected client remains owned after cleanup fails. Reconnect, setup retries and config-flow retries must close that client before creating a replacement. Unload reports failure if the session is still live.
 
@@ -90,7 +92,7 @@ python tools/proxy_security/test_sdk_bond_reuse.py
 pytest -q --cov=custom_components.panasonic_hc --cov-report=term-missing
 ```
 
-Tests use synthetic frames and mocked BLE against real HA classes; they do not operate hardware. See [changelog](CHANGELOG.md), [0.2.2 review](docs/REVIEW-0.2.2.md) and [validation](docs/VALIDATION.md) for evidence and remaining boundaries.
+Tests use synthetic frames and mocked BLE against real HA classes; they do not operate hardware. See [changelog](CHANGELOG.md), [0.2.3 review](docs/REVIEW-0.2.3.md) and [validation](docs/VALIDATION.md) for evidence and remaining boundaries.
 
 ## Attribution and licensing
 

@@ -475,3 +475,29 @@ async def test_authentication_retries_back_off_and_log_once(caplog):
             await _async_run_thermostat(thermostat)
     assert [call.args[0] for call in sleep.await_args_list] == [60, 120]
     assert caplog.text.count("Panasonic controller unavailable") == 1
+
+
+@pytest.mark.parametrize("reset", [False, True])
+async def test_reconnect_changes_route_only_on_explicit_request(hass, reset):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.panasonic_hc import async_setup
+
+    entry = MockConfigEntry(
+        domain="panasonic_hc", data={"mac": "AA:BB:CC:DD:EE:FF", "preferred_source": "PAIRED"}
+    )
+    entry.add_to_hass(hass)
+    await async_setup(hass, {})
+
+    async def reload(entry_id):
+        assert entry.data.get("preferred_source") == (None if reset else "PAIRED")
+        return True
+
+    with patch.object(hass.config_entries, "async_reload", side_effect=reload):
+        await hass.services.async_call(
+            "panasonic_hc",
+            "reconnect",
+            {"entry_id": entry.entry_id, "reset_route": reset},
+            blocking=True,
+        )
+    assert entry.data["mac"] == "AA:BB:CC:DD:EE:FF"
