@@ -27,3 +27,16 @@ The integration has no pairing wizard. A proposed wizard would need to select th
 The deployed ESPHome proxy already has `display_yes_no`, a controller-specific BLE client, a numeric-comparison event, a confirmation action and manual connect/disconnect/remove-bond actions. Its BLE client has `auto_connect: false`; the proxy has one active slot. These firmware-specific facilities are distinct from HA's generic Bluetooth client API. No firmware or bonds were changed during this rewrite.
 
 [ESPHome BLE Client](https://esphome.io/components/ble_client/) supports numeric-comparison triggers/replies. [bleak-esphome](https://github.com/Bluetooth-Devices/bleak-esphome) provides pairing when the proxy reports the feature; the inspected proxy API does not by itself supply a generic HA user-facing PIN confirmation flow. Human confirmation on the Panasonic controller remains required. Unattended confirmation is not implemented.
+
+
+## 0.2.2: session ownership and protected notifications
+
+The initial 0.2.1 path disconnected immediately on an unauthenticated CCCD write. An early 0.2.2 experiment forced pair() on every reconnect; this did not solve the reported bond loss and was removed. The owner independently demonstrated a direct proxy connection and preserved bond after reboot with only one pairing confirmation.
+
+The corrected transport lets the controller finish authentication on the same link. It retries notification subscription only for ATT insufficient authentication/encryption, with a bounded 60-second deadline. It never calls pair()/unpair() or accepts a comparison code. Non-security errors fail normally. A remembered source's authentication failure is reported without trying to re-pair through other adapters.
+
+A confirmed lifecycle defect was the 10-second cleanup deadline versus ESPHome's 20-second disconnect response and 5-second settlement budgets. Cleanup also dropped its client reference before knowing whether the link had closed. The corrected transport allows 30 seconds, retains a still-connected client on failure, serializes disconnect calls, and blocks replacement clients. Setup keeps runtime ownership even when it fails, unload reports failed teardown, and config-flow retries retain their pending validation controller.
+
+Known exhausted routes stop immediately instead of burning another selection timeout. Error summaries preserve the individual causes. Diagnostics expose the failed stage and pending teardown without keys or raw frames. The running worker coalesces outage logs and backs off security failures; HA owns initial setup scheduling.
+
+Temporary proxy diagnostics report only bond metadata. The manual proxy client needed its known static-random peer address type set correctly. The diagnostic firmware has no automatic confirmation or bond removal. SDK/build inspection confirmed bonding storage is enabled; current key presence was measured rather than inferred from an auth-success log.

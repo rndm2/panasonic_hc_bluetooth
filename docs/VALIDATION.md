@@ -1,5 +1,60 @@
 # Validation
 
+## 0.2.2 candidate — 2026-10-28
+
+- Environment: HA 2026.10.4, ESPHome 2026.10.1, IDF 5.5.6, CZ-RTC6BLW.
+- 140 automated integration tests pass. Ruff lint/format, mypy and whitespace
+  checks pass. CI also executes the actual extracted SDK handler as a C regression.
+- Confirmed integration fixes: retain live-client ownership after failed teardown,
+  block overlapping replacement, allow the backend disconnect/settlement budget,
+  preserve authentication errors on link drop and stop fallback from the bonded
+  preferred source after such an error. No component pair/unpair calls are made.
+- Earlier HA tests lost authentication with a still-present NVS bond, then lost
+  that NVS bond after an unanswered SMP timeout. The independent native test below
+  isolates an SDK cause. A `Deleting unpaired device` log alone is not proof that
+  NVS was deleted.
+
+### Independent firmware reproduction and fix
+
+The HA Panasonic entry remained disabled throughout these native tests.
+
+- Original IDF: after reboot, authentication succeeds (type 1, mode 13) and the
+  protected CCCD enable/disable responses both have status 0. After ordinary native
+  disconnect/connect, a new comparison code appears and that CCCD write returns
+  status 5. NVS still contains the bond before the SMP timeout, then has none.
+- SDK root: `smp_check_auth_req()` clears RAM keys on encryption using an existing
+  bond. The subsequent session cannot find usable RAM keys. The extracted actual
+  C function reproduces this; gating replacement on `SMP_PAIR_FLAG_ENC_AFTER_PAIR`
+  preserves reused keys while keeping successful new-pair replacement intact.
+- Patched image: after one manual pairing, three consecutive native reconnects
+  authenticate without a comparison code. Every protected CCCD enable/disable
+  returns status 0, and NVS retains one target bond.
+- A second OTA build uses a YAML per-device `bt` component override. A normal
+  ESPHome compile succeeds and compile_commands identifies the patched SMP source.
+  The shared SDK file SHA256 remains unchanged. After that image's reboot, NVS
+  retains the bond, authentication succeeds and both protected writes return 0.
+- The target config disables automatic central-role NVS bond removal on pairing
+  failure. Encryption, numeric comparison and hardened repairing remain enabled.
+- No bootloader, partition table, NVS image or unrelated adapter was flashed.
+  The old application image is retained for rollback.
+
+### HA component validation
+
+- Deployed the final transport with a previous-source SHA256 guard. `ha core check`
+  passed and HA Core restarted successfully.
+- Enabled the existing entry after closing only the native test client. It loaded
+  on the intended proxy, authenticated without a new code and returned Panasonic
+  status. The existing climate entity reports cool, target/current 24.5 degrees,
+  fan auto and eco. No HVAC setting commands were sent in this investigation.
+- `panasonic_hc.reconnect` successfully reloaded the same entry, authenticated with
+  the existing bond and restored status.
+- Restarted only the target proxy with the integration active. The entry recovered
+  automatically in approximately 13 seconds. NVS retained one target bond and the
+  climate returned valid status/current temperature. One expected outage warning
+  recorded attempts through other adapters while the preferred proxy was offline.
+- These are bounded reconnect/reboot checks. They do not establish long-term uptime,
+  every HVAC command, other controller/SDK versions or physical compressor behavior.
+
 ## 0.2.1 — adding after deletion and route fallback
 
 - Reproduced the pre-fix `cannot_connect` through HA's native config-flow API: local GATT connection succeeded but readiness failed while a bonded proxy was available.

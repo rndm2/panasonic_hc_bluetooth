@@ -15,7 +15,7 @@ In HACS, add `https://github.com/rndm2/panasonic_hc_bluetooth` as an **Integrati
 
 Select the controller from nearby Bluetooth devices or enter its colon-separated MAC address. The list can include non-Panasonic devices; choose your controller. Setup validates its Panasonic GATT connection and status before creating an entry. Devices advertising `CZ-RTC6*` also support automatic discovery. A renamed device without identifying service/manufacturer data cannot be automatically classified as Panasonic.
 
-**This setup form is not a Bluetooth pairing wizard.** It validates an existing connection; it does not create a bond or confirm a PIN.
+**This setup form has no PIN-confirmation UI.** Pair the controller with the intended adapter/proxy first. Setup waits for protected notifications while the controller finishes authentication on that same session. It does not initiate pairing, accept codes or request bond removal.
 
 ### Migration
 
@@ -41,7 +41,7 @@ Press **Reconnect Bluetooth** on the device, or call the `panasonic_hc.reconnect
 
 HA normally selects the connection path using signal strength, failure history and free slots. A GATT connection can succeed while the Panasonic notification/status handshake fails, so HA's normal scoring alone can repeatedly choose a non-working adapter.
 
-From **0.2.1**, the Panasonic client tries another available route when connection, notification subscription or the first valid status fails. Failed sources are excluded only for that controller's current connection attempt. Other Bluetooth devices and adapters remain enabled and unchanged. Each route has bounded connection time and the readiness search has a 90-second deadline, followed by bounded cleanup; exhausted routes return a setup/flow error.
+From **0.2.1**, the Panasonic client tries another available route when connection, notification subscription or the first valid status fails. Failed sources are excluded only for that controller's current connection attempt. Other Bluetooth devices and adapters remain enabled and unchanged. Known exhausted routes return immediately, retaining the individual failure reasons. Each route has bounded connection time and the readiness search has a 120-second deadline, followed by bounded cleanup; exhausted routes return a setup/flow error.
 
 A route is remembered only after a valid status reply. The setup flow saves that source in the integration entry; subsequent setup/reconnect prefers it and falls back if it is missing, busy or fails. This preserves strict validation in the UI without treating one failed adapter as proof that the controller is unreachable.
 
@@ -55,11 +55,23 @@ For a local adapter, use a BlueZ agent such as `bluetoothctl` on the machine own
 
 For ESPHome, follow the official [BLE Client numeric-comparison documentation](https://esphome.io/components/ble_client/) and [Bluetooth proxy requirements](https://esphome.io/components/bluetooth_proxy/). Firmware must support the pairing interaction. An established Panasonic configuration uses `esp32_ble.io_capability: display_yes_no`, a `ble_client` with `auto_connect: false`, `on_numeric_comparison_request`, and a deliberately invoked `ble_client.numeric_comparison_reply` action. Verify the PIN before accepting it. Do not blindly accept unsolicited requests or keep a firmware BLE client connected while HA needs the proxy slot.
 
-Bleak/ESPHome support a pairing request on capable firmware, but that alone is not a universal HA PIN-confirmation flow. This integration does not initiate unattended pairing, remove bonds, flash ESPHome firmware or invoke custom proxy pairing services.
+From 0.2.2, security-related notification errors keep the existing link alive while authentication finishes, with a 60-second subscription/security deadline. The component does not call `pair()` on every reconnect. Other notification errors fail normally. A failed authentication on the remembered source is reported directly instead of probing unrelated adapters.
+
+Teardown has a 30-second deadline, allowing the backend's 20-second disconnect response and 5-second slot settlement. A still-connected client remains owned after cleanup fails. Reconnect, setup retries and config-flow retries must close that client before creating a replacement. Unload reports failure if the session is still live.
+
+### ESP32 bond reuse on IDF 5.5.6
+
+An independent native ESPHome client reproduced a firmware defect where the
+first encrypted connection works, the next reconnect requests pairing again,
+and an unanswered timeout can remove the NVS bond. Integration retries alone
+cannot repair this. A targeted IDF 5.5.6 fix, C regression test, native protected
+GATT probe and per-device build override are in [proxy security tools](tools/proxy_security/README.md).
+See [validation](docs/VALIDATION.md) for the tested hardware boundary. This
+workaround must be reviewed before changing the pinned framework version.
 
 ## Diagnostics
 
-Download diagnostics from the integration page for connection stage, attempts, malformed packets, rejected temperature samples, failed commands, measurement ages and route candidates (RSSI/failures/free slots). MAC addresses, scanner names and raw frames are omitted. Candidate routes are not proof of the currently connected route; inspect HA Bluetooth logs for the actual selection.
+Download diagnostics from the integration page for connection stage, attempts, malformed packets, rejected temperature samples, failed commands, measurement ages and route candidates (RSSI/failures/free slots). MAC addresses, scanner names and raw frames are omitted. Authentication attempts and the last failed connection stage are also included. Candidate routes are not proof of the currently connected route; inspect HA Bluetooth logs for the actual selection.
 
 If unavailable, check pairing on the selected adapter, active proxy slots, range, and competing clients. Debug logging for `custom_components.panasonic_hc` reports invalid-frame reasons. Manual reconnect cannot fix an offline proxy or missing bond.
 
@@ -74,10 +86,11 @@ pip install '.[test]'
 ruff check .
 ruff format --check .
 mypy
+python tools/proxy_security/test_sdk_bond_reuse.py
 pytest -q --cov=custom_components.panasonic_hc --cov-report=term-missing
 ```
 
-Tests use synthetic frames and mocked BLE against real HA classes; they do not operate hardware. See [changelog](CHANGELOG.md), [0.2.1 review](docs/REVIEW-0.2.1.md) and [validation](docs/VALIDATION.md) for evidence and remaining boundaries.
+Tests use synthetic frames and mocked BLE against real HA classes; they do not operate hardware. See [changelog](CHANGELOG.md), [0.2.2 review](docs/REVIEW-0.2.2.md) and [validation](docs/VALIDATION.md) for evidence and remaining boundaries.
 
 ## Attribution and licensing
 

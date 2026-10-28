@@ -15,7 +15,8 @@ from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError, Se
 from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN
-from .panasonic_hc import PanasonicHC, PanasonicHCException
+from .errors import PanasonicAuthenticationError, PanasonicHCException
+from .panasonic_hc import PanasonicHC
 from .runtime import _async_run_thermostat
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -75,13 +76,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: PanasonicHCConfigEntry) 
     def get_device():
         return bluetooth.async_ble_device_from_address(hass, address.upper(), connectable=True)
 
+    previous = getattr(entry, "runtime_data", None)
+    if isinstance(previous, RuntimeData):
+        if not await previous.thermostat.async_disconnect():
+            raise ConfigEntryNotReady("The previous BLE session is still closing; retrying cleanup")
     device = get_device()
     if device is None:
         raise ConfigEntryNotReady("Controller has no connectable Bluetooth route")
     thermostat = PanasonicHC(device, address, get_device)
     thermostat.transport.routes.preferred = entry.data.get("preferred_source")
+    entry.runtime_data = RuntimeData(thermostat)
     try:
         await thermostat.async_connect()
+    except PanasonicAuthenticationError as err:
+        # Expected recovery failures already include their backend reason.
+        raise ConfigEntryNotReady(str(err)) from None
     except PanasonicHCException as err:
         raise ConfigEntryNotReady(str(err)) from err
     if (source := thermostat.transport.routes.preferred) and source != entry.data.get(
@@ -90,7 +99,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: PanasonicHCConfigEntry) 
         hass.config_entries.async_update_entry(
             entry, data={**entry.data, "preferred_source": source}
         )
-    entry.runtime_data = RuntimeData(thermostat)
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except BaseException:
@@ -110,5 +118,4 @@ async def async_unload_entry(hass: HomeAssistant, entry: PanasonicHCConfigEntry)
         runtime.task.cancel()
         with suppress(asyncio.CancelledError):
             await runtime.task
-    await runtime.thermostat.async_disconnect()
-    return True
+    return await runtime.thermostat.async_disconnect()

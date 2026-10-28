@@ -12,7 +12,8 @@ from homeassistant.helpers import selector
 from homeassistant.helpers.device_registry import format_mac
 
 from .const import DOMAIN, MODEL
-from .panasonic_hc import PanasonicHC, PanasonicHCException
+from .errors import PanasonicAuthenticationError, PanasonicHCException
+from .panasonic_hc import PanasonicHC
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,25 +28,35 @@ class PanasonicHCConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
     mac_address: str
     _preferred_source: str | None = None
+    _validation_controller: PanasonicHC | None = None
 
     async def _validate_connection(self) -> str | None:
+        if self._validation_controller is not None:
+            if await self._validation_controller.async_disconnect() is False:
+                return "cannot_connect"
+            self._validation_controller = None
         device = bluetooth.async_ble_device_from_address(
             self.hass, self.mac_address.upper(), connectable=True
         )
         if device is None:
             return "cannot_connect"
         thermostat = PanasonicHC(device, self.mac_address)
+        self._validation_controller = thermostat
         try:
             await thermostat.async_connect()
             self._preferred_source = thermostat.transport.routes.preferred
+        except PanasonicAuthenticationError:
+            return "authentication_failed"
         except PanasonicHCException:
             return "cannot_connect"
         except Exception:
             _LOGGER.exception("Unexpected error validating controller")
             return "unknown"
         finally:
-            await thermostat.async_disconnect()
-        return None
+            closed = await thermostat.async_disconnect()
+            if closed is not False:
+                self._validation_controller = None
+        return "cannot_connect" if closed is False else None
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}

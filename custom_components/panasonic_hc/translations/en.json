@@ -7,7 +7,7 @@
         "data": {
           "mac": "MAC address"
         },
-        "description": "Select your Panasonic controller from nearby Bluetooth devices, or enter its MAC address. Renamed devices may appear under their custom name. Pair it with your adapter or ESPHome proxy first; this screen checks the connection and does not create a Bluetooth bond."
+        "description": "Select your Panasonic controller from nearby Bluetooth devices, or enter its MAC address. Pair it with the connecting adapter or proxy first. Setup waits for the controller to finish authenticating the existing session; it does not initiate pairing or automatically confirm a code."
       },
       "init": {
         "title": "Connect Panasonic H&C Bluetooth",
@@ -17,7 +17,8 @@
     "error": {
       "invalid_mac_address": "Enter six hexadecimal pairs separated by colons (AA:BB:CC:DD:EE:FF).",
       "cannot_connect": "Unable to read the controller. Check Bluetooth range, pairing and active proxy connections, then retry.",
-      "unknown": "An unexpected Bluetooth error occurred. See the integration logs and retry."
+      "unknown": "An unexpected Bluetooth error occurred. See the integration logs and retry.",
+      "authentication_failed": "Bluetooth authentication failed. Check pairing with the selected adapter or proxy, compare any displayed code with the Panasonic controller, confirm it on both sides, then retry."
     },
     "abort": {
       "already_configured": "Device is already configured"
@@ -47,7 +48,7 @@
   "services": {
     "reconnect": {
       "name": "Reconnect Bluetooth",
-      "description": "Reload the selected controller connection and let Home Assistant select an available Bluetooth adapter or proxy. Does not change pairing or HVAC settings.",
+      "description": "Close the old controller session before reconnecting, prefer its last working Bluetooth source, and wait for protected notifications. Does not initiate pairing, request bond removal, restart a proxy or change HVAC settings.",
       "fields": {
         "entry_id": {
           "name": "Integration entry",

@@ -42,6 +42,7 @@ def test_failed_local_route_skipped_only_for_this_controller():
     backend = client._async_get_best_available_backend_and_device(manager)
     assert backend.scanner is proxy.scanner
     assert policy.selected == "PROXY"
+    assert policy.candidates == {"LOCAL", "PROXY"}
     manager.async_allocate_connection_slot.assert_not_called()
     local.scanner._finished_connecting.assert_not_called()
     # A separate controller/client still sees and may select the local adapter.

@@ -155,7 +155,7 @@ async def test_backend_cleanup_assertion_preserves_retryable_setup_error(thermos
             await thermostat.async_connect()
     assert isinstance(exc.value.__cause__, BleakError)
     assert not thermostat.available
-    assert thermostat.transport.client is None
+    assert thermostat.transport.client is connected
 
 
 async def test_cleanup_assertion_preserves_cancellation(thermostat, connected):
@@ -169,7 +169,7 @@ async def test_cleanup_assertion_preserves_cancellation(thermostat, connected):
             thermostat.transport.client = None
             thermostat.ready = False
             await thermostat.async_connect()
-    assert thermostat.transport.client is None
+    assert thermostat.transport.client is connected
 
 
 async def test_queued_notification_from_old_connection_is_ignored(thermostat, connected):
@@ -447,6 +447,7 @@ async def test_notification_failure_tries_another_route_without_resending_comman
 ):
     first = Mock(is_connected=True)
     first.disconnect = AsyncMock()
+    first.pair = AsyncMock()
     first.start_notify = AsyncMock(side_effect=BleakError("Not connected"))
     exclusions = []
 
@@ -472,6 +473,7 @@ async def test_missing_status_tries_next_route_before_flow_fails(thermostat, con
     silent = Mock(is_connected=True)
     silent.start_notify = AsyncMock()
     silent.disconnect = AsyncMock()
+    silent.pair = AsyncMock()
     silent.write_gatt_char = AsyncMock()
     attempts = []
 
@@ -524,3 +526,44 @@ async def test_route_search_has_total_deadline(thermostat):
             await thermostat.async_connect()
     assert thermostat.transport.client is None
     assert not thermostat.available
+
+
+async def test_known_exhausted_routes_preserve_cause_without_extra_attempt(thermostat):
+    attempts = []
+
+    async def establish(*args, route_policy, **kwargs):
+        route_policy.candidates = {"FIRST", "SECOND"}
+        source = "FIRST" if not attempts else "SECOND"
+        attempts.append(source)
+        route_policy.selected = source
+        raise BleakError(f"{source} failed")
+
+    with patch(
+        "custom_components.panasonic_hc.transport.establish_connection", side_effect=establish
+    ):
+        with pytest.raises(PanasonicHCException) as exc:
+            await thermostat.async_connect()
+    assert attempts == ["FIRST", "SECOND"]
+    assert "FIRST failed" in str(exc.value)
+    assert "SECOND failed" in str(exc.value)
+
+
+async def test_total_deadline_does_not_hide_earlier_route_error(thermostat):
+    calls = 0
+
+    async def establish(*args, route_policy, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            route_policy.selected = "FIRST"
+            raise BleakError("original route failure")
+        await asyncio.Event().wait()
+
+    with (
+        patch(
+            "custom_components.panasonic_hc.transport.establish_connection", side_effect=establish
+        ),
+        patch("custom_components.panasonic_hc.panasonic_hc.CONNECTION_DEADLINE", 0.01),
+    ):
+        with pytest.raises(PanasonicHCException, match="original route failure"):
+            await thermostat.async_connect()
